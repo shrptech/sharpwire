@@ -99,6 +99,13 @@ class VlanInterface(_Frozen):
     mtu: int | None = None
     addresses: tuple[IPv4Interface | IPv6Interface, ...] = ()
 
+    @model_validator(mode="after")
+    def _one_address_per_family(self) -> Self:
+        for version, count in Counter(a.version for a in self.addresses).items():
+            if count > 1:
+                raise ValueError(f"{self.name} has {count} IPv{version} addresses; it can have one.")
+        return self
+
     def address(self, version: int) -> IPv4Interface | IPv6Interface | None:
         return next((a for a in self.addresses if a.version == version), None)
 
@@ -107,9 +114,14 @@ class VlanInterface(_Frozen):
 
 
 class Node(_Frozen):
-    """A Proxmox node, as the routers see it. ASN and router-id are device custom fields."""
+    """A Proxmox node, as the routers see it. ASN and router-id are device custom fields.
+
+    `managed` (the `sharpwire_managed` custom field) says whether sharpwire may change the device. Every active
+    device is in the model either way, so the routers peer with hand-run devices too.
+    """
 
     name: str
+    managed: bool
     asn: int
     router_id: IPv4Address
     loopback: IPv6Interface
@@ -125,6 +137,7 @@ class Core(_Frozen):
     """A CCR2116 core. Its underlay VLAN is the underlay VLAN it has an interface on."""
 
     name: str
+    managed: bool
     asn: int
     router_id: IPv4Address
     lag: Lag
@@ -141,6 +154,7 @@ class Leaf(_Frozen):
     """A CRS317 leaf in the MLAG pair: L2 only, apart from its mgmt interface on the bridge."""
 
     name: str
+    managed: bool
     bridge: str
     peer_link: Lag
     bonds: tuple[Lag, ...]
@@ -168,11 +182,13 @@ class Network(_Frozen):
         errors = [
             *self._asn_and_router_id_errors(),
             *self._underlay_errors(),
+            *self._core_errors(),
             *self._address_errors(),
             *self._leaf_errors(),
         ]
         if errors:
-            raise ValueError(" ".join(errors))
+            # One problem per line, so callers can list them (app/intent/builder.py).
+            raise ValueError("\n".join(errors))
         return self
 
     def _asn_and_router_id_errors(self) -> list[str]:
@@ -207,6 +223,24 @@ class Network(_Frozen):
         for n in self.nodes:
             if n.loopback.network.prefixlen != 128 or n.loopback.ip not in f.vtep_prefix:
                 errors.append(f"Node {n.name}'s loopback {n.loopback} must be a /128 inside {f.vtep_prefix}.")
+        return errors
+
+    def _core_errors(self) -> list[str]:
+        """What the core renderer needs: mgmt, underlay and handoff interfaces, with their addresses."""
+        f = self.fabric
+        errors: list[str] = []
+        for c in self.cores:
+            by_vlan = {v.vlan_id: v for v in c.vlan_interfaces}
+            if f.mgmt_vlan_id not in by_vlan:
+                errors.append(f"Core {c.name} has no interface on mgmt VLAN {f.mgmt_vlan_id}.")
+            for v in c.vlan_interfaces:
+                if v.vlan_id in f.underlay_ids and v.address(6) is None:
+                    errors.append(f"Core {c.name}'s {v.name} needs an IPv6 address on underlay VLAN {v.vlan_id}.")
+            pub = by_vlan.get(f.handoff.vlan_id)
+            if pub is None:
+                errors.append(f"Core {c.name} has no interface on handoff VLAN {f.handoff.vlan_id}.")
+            elif pub.address(4) is None or pub.address(6) is None:
+                errors.append(f"Core {c.name}'s {pub.name} needs an IPv4 and an IPv6 address.")
         return errors
 
     def _address_errors(self) -> list[str]:
@@ -244,6 +278,8 @@ class Network(_Frozen):
                 errors.append("The two leafs must have the same bonds, with the same mlag-id, peer and VLANs on each.")
         node_vlans = {f.mgmt_vlan_id, *f.underlay_ids, f.handoff.vlan_id}
         for leaf in self.leafs:
+            if leaf.mgmt.vlan_id != f.mgmt_vlan_id:
+                errors.append(f"Leaf {leaf.name}'s {leaf.mgmt.name} must be on mgmt VLAN {f.mgmt_vlan_id}.")
             carried: set[int] = set()
             for bd in leaf.bonds:
                 carried |= set(bd.tagged_vlans)

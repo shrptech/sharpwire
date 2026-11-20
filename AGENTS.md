@@ -37,7 +37,7 @@ NETBOX_ROOT=$PWD/testing uv run netbox test sharpwire_netbox --keepdb
 | `app/schemas/` | Pydantic wire shapes |
 | `app/services/` | Everything else that isn't a router, a job or a driver. Imports neither `fastapi.Depends`/`Request` nor `app.api` |
 | `app/jobs/` | The Postgres job queue (`SELECT … FOR UPDATE SKIP LOCKED`) and job bodies. No Celery, no Redis |
-| `app/intent/` | The vendor-neutral intent model (Pydantic) that drivers render from, with the cross-target rules |
+| `app/intent/` | The vendor-neutral intent model (Pydantic) that drivers render from, with the cross-target rules, and the builder that makes it from a NetBox GraphQL snapshot |
 | `app/drivers/` | One package per target type (`routeros`, `proxmox`, later `vyos`): render, fetch live state, apply, health checks |
 | `app/enums.py` | Every shared value list, as a `Literal`. Imports nothing from the app |
 | `alembic/` | Migrations |
@@ -90,4 +90,4 @@ Import direction: `api → jobs, services, drivers, schemas, models`; `jobs → 
 
 ## Testing
 
-Unit tests need no network. Tests that touch the database use the real Postgres from `docker compose`, never a mocked DB layer, as in sharpstack. Driver tests use golden files rendered from NetBox fixtures; the network doc's examples are the first golden files. `tests/integration/` runs against live NetBox and the containerlab or nested Proxmox lab, and is marked `integration`.
+Unit tests need no network. The intent builder is tested from a real NetBox GraphQL snapshot (`tests/fixtures/netbox/`). When the query or the seed changes, re-capture it from the dev NetBox (see the plugin README) instead of editing the JSON by hand. Tests that touch the database use the real Postgres from `docker compose`, never a mocked DB layer, as in sharpstack. Driver tests use golden files rendered from NetBox fixtures. The first goldens came from the network doc's examples, reordered to the builder's canonical order (the leaf's bonds by name). `tests/integration/` runs against live NetBox and the containerlab or nested Proxmox lab, and is marked `integration`: a plain `pytest` skips it, `pytest -m integration tests/integration` runs it.

@@ -72,9 +72,12 @@ def test_leaf_vlans_follow_netbox_tagged_vlans() -> None:
     # A VLAN added to a bond's tagged VLANs in NetBox shows up in the bridge VLAN table, with no code change.
     network = example_network()
     leaf = network.leafs[0]
-    bonds = tuple(b.model_copy(update={"tagged_vlans": (*b.tagged_vlans, 999)}) for b in leaf.bonds[:1])
+    bonds = tuple(
+        b.model_copy(update={"tagged_vlans": (*b.tagged_vlans, 999)}) if b.name == "bond-pve1" else b
+        for b in leaf.bonds
+    )
     peer_link = leaf.peer_link.model_copy(update={"tagged_vlans": (*leaf.peer_link.tagged_vlans, 999)})
-    changed = leaf.model_copy(update={"bonds": bonds + leaf.bonds[1:], "peer_link": peer_link})
+    changed = leaf.model_copy(update={"bonds": bonds, "peer_link": peer_link})
     vlans = {
         dict(r.fields)["vlan-ids"]: dict(r.fields)["tagged"]
         for r in render_leaf(network, changed)

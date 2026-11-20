@@ -1,11 +1,12 @@
 """The network doc's example network (docs/network/proxmox-evpn-ipv6-underlay.md), phase 1: three nodes.
 
 Shaped like NetBox data: interfaces with their MTUs, LAG members, tagged VLANs, and IP addresses with masks.
-Values come from the doc's addressing plan and Appendix A. The cores' own mgmt addresses and router-ids for the
-nodes aren't all in the doc; this fixture picks ::2/::3 for the cores' mgmt and 10.255.0.1x for the nodes.
+Values come from the doc's addressing plan and Appendix A. The cores' own mgmt addresses aren't in the doc; this
+fixture picks ::2/::3.
 
-When the intent builder exists (build step 2), this fixture is replaced by a NetBox GraphQL snapshot fed
-through the builder.
+It's also what the intent builder must produce from the NetBox snapshot of the same network
+(tests/fixtures/netbox/example_network.json), so it's in the builder's canonical order: interfaces by name,
+VLANs by ID, IPv6 addresses first.
 """
 
 from ipaddress import IPv4Address, IPv4Interface, IPv4Network, IPv6Interface, IPv6Network
@@ -60,12 +61,20 @@ FABRIC = Fabric(
 def node(i: int) -> Node:
     return Node(
         name=f"pve{i}",
+        managed=True,
         asn=4200000010 + i,
         router_id=IPv4Address(f"10.255.0.{10 + i}"),
         loopback=v6(f"2001:db8:ffff::{10 + i}/128"),
         vlan_interfaces=(
-            VlanInterface(name=f"bond0.{UL_A}", vlan_id=UL_A, addresses=(v6(f"2001:db8:101::{10 + i}/64"),)),
-            VlanInterface(name=f"bond0.{UL_B}", vlan_id=UL_B, addresses=(v6(f"2001:db8:102::{10 + i}/64"),)),
+            VlanInterface(name=f"bond0.{MGMT}", vlan_id=MGMT, mtu=1500, addresses=(v6(f"2001:db8:100::{10 + i}/64"),)),
+            VlanInterface(name=f"bond0.{UL_A}", vlan_id=UL_A, mtu=9216, addresses=(v6(f"2001:db8:101::{10 + i}/64"),)),
+            VlanInterface(name=f"bond0.{UL_B}", vlan_id=UL_B, mtu=9216, addresses=(v6(f"2001:db8:102::{10 + i}/64"),)),
+            VlanInterface(
+                name=f"bond0.{PUB}",
+                vlan_id=PUB,
+                mtu=9216,
+                addresses=(v6(f"2001:db8:250::{10 + i}/64"), IPv4Interface(f"10.250.0.{10 + i}/24")),
+            ),
         ),
     )
 
@@ -77,9 +86,10 @@ def core(name: str, asn: int, router_id: str, mgmt: str, underlay: tuple[int, st
     ul_vlan, ul_address = underlay
     return Core(
         name=name,
+        managed=True,
         asn=asn,
         router_id=IPv4Address(router_id),
-        lag=Lag(name="bond-leafs", members=(sfp(1), sfp(2)), mtu=9216),
+        lag=Lag(name="bond-leafs", members=(sfp(1), sfp(2)), mtu=9216, tagged_vlans=(MGMT, ul_vlan, PUB)),
         vlan_interfaces=(
             VlanInterface(name=f"vlan{MGMT}", vlan_id=MGMT, mtu=1500, addresses=(v6(mgmt),)),
             VlanInterface(name=f"vlan{ul_vlan}", vlan_id=ul_vlan, mtu=9216, addresses=(v6(ul_address),)),
@@ -105,21 +115,24 @@ def leaf_bonds() -> tuple[Lag, ...]:
         return Lag(name=name, members=(sfp(port),), mtu=9216, peer=peer, mlag_id=mlag_id, tagged_vlans=vlans)
 
     return (
-        *(bond(f"bond-pve{i}", f"pve{i}", i, 10 + i, FABRIC_VLANS) for i in (1, 2, 3)),
         bond("bond-coreA", "core-a", 13, 21, (MGMT, UL_A, PUB)),
         bond("bond-coreB", "core-b", 14, 22, (MGMT, UL_B, PUB)),
+        *(bond(f"bond-pve{i}", f"pve{i}", i, 10 + i, FABRIC_VLANS) for i in (1, 2, 3)),
     )
 
 
 LEAFS = tuple(
     Leaf(
         name=f"leaf-{x}",
+        managed=True,
         bridge="bridge",
-        peer_link=Lag(name="peer-link", members=(sfp(15), sfp(16)), mtu=9216, tagged_vlans=FABRIC_VLANS),
+        peer_link=Lag(
+            name="peer-link", members=(sfp(15), sfp(16)), mtu=9216, peer=f"leaf-{other}", tagged_vlans=FABRIC_VLANS
+        ),
         bonds=leaf_bonds(),
         mgmt=VlanInterface(name="mgmt", vlan_id=MGMT, addresses=(v6(f"2001:db8:100::{suffix}/64"),)),
     )
-    for x, suffix in (("a", "f1"), ("b", "f2"))
+    for x, other, suffix in (("a", "b", "f1"), ("b", "a", "f2"))
 )
 
 

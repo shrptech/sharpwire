@@ -9,7 +9,19 @@ NetBox is the single source of truth. Every value that ends up on a device comes
 
 There is no third place. If a value isn't in the mapping or the rules below, it doesn't belong on a device. Hand-configured parts of v1 (leafs, corosync link1, bootstraps) still follow the same rules, so the read-only drivers can diff them.
 
-The intent builder reads NetBox via GraphQL into the vendor-neutral model in `app/intent/models.py`. The driver is chosen by the device's NetBox platform (`routeros`, `proxmox`). Devices are managed when their `sharpwire_managed` custom field is set.
+The intent builder reads NetBox via GraphQL into the vendor-neutral model in `app/intent/models.py`. `app/services/netbox.py` reads a snapshot, one list per kind of object, page by page. `app/intent/builder.py` turns it into the model without any other input. The lists are separate requests, so an edit made while they're read can land between them; a plan's stale check catches that.
+
+- **The fabric is what's tagged `sharpwire-managed`** ([sharpstack integration](09-sharpstack-integration.md#ownership)): devices, VLANs, prefixes and ASNs. Of devices, VLANs and prefixes, only the active ones count. A VLAN is matched by its NetBox object, not its VID, so an interface on another site's VLAN 102 is reported, not mistaken for the underlay.
+- **Addresses:** only active IP addresses count, and an interface has at most one per family. A second active address is reported, never silently picked.
+- **Bond peers** follow the members' cable paths (`connected_endpoints`), through patch panels.
+- **Every active fabric device is in the model,** managed or not, so the routers peer with hand-run devices too. The `sharpwire_managed` custom field is read into the model as `managed`: what sharpwire may change.
+- **Problems:** when NetBox is missing something or holds it in the wrong shape, the builder reports every problem at once, each saying what to fix in NetBox, then the model's cross-target validation adds its own, one sentence each.
+- **Order:** it sorts what it builds (by natural name, VLAN ID, and addresses IPv6 first), so the same NetBox data always renders the same config.
+- **Platform:** the driver is chosen by the device's NetBox platform (`routeros`, `proxmox`), and the builder rejects a device whose role and platform don't match.
+
+The NetBox token needs view permission on devices, interfaces, device roles, platforms, cables, VLANs, prefixes, IP addresses, ASNs, IPAM roles and tags. NetBox hides what a token can't view instead of failing, so a missing permission shows up as missing objects.
+
+Not read yet: the SDN zone and VNets, the nodes' cluster membership and `firewall_enabled`. They come with the drivers that use them (build plan step 3).
 
 ## NetBox mapping
 

@@ -1,0 +1,2028 @@
+{
+  "asn_list": [
+    {
+      "asn": 65000,
+      "id": "1",
+      "tags": [
+        {
+          "slug": "overlay"
+        },
+        {
+          "slug": "sharpwire-managed"
+        }
+      ]
+    },
+    {
+      "asn": 4200000001,
+      "id": "3",
+      "tags": [
+        {
+          "slug": "sharpwire-managed"
+        }
+      ]
+    },
+    {
+      "asn": 4200000002,
+      "id": "4",
+      "tags": [
+        {
+          "slug": "sharpwire-managed"
+        }
+      ]
+    },
+    {
+      "asn": 4200000011,
+      "id": "5",
+      "tags": [
+        {
+          "slug": "sharpwire-managed"
+        }
+      ]
+    },
+    {
+      "asn": 4200000012,
+      "id": "6",
+      "tags": [
+        {
+          "slug": "sharpwire-managed"
+        }
+      ]
+    },
+    {
+      "asn": 4200000013,
+      "id": "7",
+      "tags": [
+        {
+          "slug": "sharpwire-managed"
+        }
+      ]
+    },
+    {
+      "asn": 4200000100,
+      "id": "2",
+      "tags": [
+        {
+          "slug": "public-handoff"
+        },
+        {
+          "slug": "sharpwire-managed"
+        }
+      ]
+    }
+  ],
+  "device_list": [
+    {
+      "custom_fields": {
+        "asn": 3,
+        "router_id": "10.255.255.1",
+        "sharpwire_managed": true
+      },
+      "interfaces": [
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond-leafs",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-a"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-leafs"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus1",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-b"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-leafs"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus2",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:100::2/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 1500,
+          "name": "vlan10",
+          "parent": {
+            "name": "bond-leafs"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "1",
+            "vid": 10
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:101::1/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "vlan101",
+          "parent": {
+            "name": "bond-leafs"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "2",
+            "vid": 101
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "10.250.0.1/24",
+              "status": "active"
+            },
+            {
+              "address": "2001:db8:250::1/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "vlan300",
+          "parent": {
+            "name": "bond-leafs"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "4",
+            "vid": 300
+          }
+        }
+      ],
+      "name": "core-a",
+      "platform": {
+        "slug": "routeros"
+      },
+      "role": {
+        "slug": "core"
+      }
+    },
+    {
+      "custom_fields": {
+        "asn": 4,
+        "router_id": "10.255.255.2",
+        "sharpwire_managed": true
+      },
+      "interfaces": [
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond-leafs",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-a"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-leafs"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus1",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-b"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-leafs"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus2",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:100::3/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 1500,
+          "name": "vlan10",
+          "parent": {
+            "name": "bond-leafs"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "1",
+            "vid": 10
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:102::1/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "vlan102",
+          "parent": {
+            "name": "bond-leafs"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "3",
+            "vid": 102
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "10.250.0.2/24",
+              "status": "active"
+            },
+            {
+              "address": "2001:db8:250::2/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "vlan300",
+          "parent": {
+            "name": "bond-leafs"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "4",
+            "vid": 300
+          }
+        }
+      ],
+      "name": "core-b",
+      "platform": {
+        "slug": "routeros"
+      },
+      "role": {
+        "slug": "core"
+      }
+    },
+    {
+      "custom_fields": {
+        "asn": null,
+        "router_id": null,
+        "sharpwire_managed": true
+      },
+      "interfaces": [
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": 21
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond-coreA",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": 22
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond-coreB",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": 11
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond-pve1",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": 12
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond-pve2",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": 13
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond-pve3",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": null,
+          "mtu": null,
+          "name": "bridge",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "bridge",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:100::f1/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": null,
+          "name": "mgmt",
+          "parent": {
+            "name": "bridge"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "1",
+            "vid": 10
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "peer-link",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "pve1"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-pve1"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus1",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "pve2"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-pve2"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus2",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "pve3"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-pve3"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus3",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "core-a"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-coreA"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus13",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "core-b"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-coreB"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus14",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-b"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "peer-link"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus15",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-b"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "peer-link"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus16",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        }
+      ],
+      "name": "leaf-a",
+      "platform": {
+        "slug": "routeros"
+      },
+      "role": {
+        "slug": "leaf"
+      }
+    },
+    {
+      "custom_fields": {
+        "asn": null,
+        "router_id": null,
+        "sharpwire_managed": true
+      },
+      "interfaces": [
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": 21
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond-coreA",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": 22
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond-coreB",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": 11
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond-pve1",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": 12
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond-pve2",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": 13
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond-pve3",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": null,
+          "mtu": null,
+          "name": "bridge",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "bridge",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:100::f2/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": null,
+          "name": "mgmt",
+          "parent": {
+            "name": "bridge"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "1",
+            "vid": 10
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "peer-link",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "pve1"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-pve1"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus1",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "pve2"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-pve2"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus2",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "pve3"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-pve3"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus3",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "core-a"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-coreA"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus13",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "core-b"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond-coreB"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus14",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-a"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "peer-link"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus15",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-a"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": 9500,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "peer-link"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "sfp-sfpplus16",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        }
+      ],
+      "name": "leaf-b",
+      "platform": {
+        "slug": "routeros"
+      },
+      "role": {
+        "slug": "leaf"
+      }
+    },
+    {
+      "custom_fields": {
+        "asn": 5,
+        "router_id": "10.255.0.11",
+        "sharpwire_managed": true
+      },
+      "interfaces": [
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond0",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:100::11/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 1500,
+          "name": "bond0.10",
+          "parent": {
+            "name": "bond0"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "1",
+            "vid": 10
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:101::11/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "bond0.101",
+          "parent": {
+            "name": "bond0"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "2",
+            "vid": 101
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:102::11/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "bond0.102",
+          "parent": {
+            "name": "bond0"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "3",
+            "vid": 102
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "10.250.0.11/24",
+              "status": "active"
+            },
+            {
+              "address": "2001:db8:250::11/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "bond0.300",
+          "parent": {
+            "name": "bond0"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "4",
+            "vid": 300
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:ffff::11/128",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": null,
+          "mtu": null,
+          "name": "dummy0",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-a"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond0"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "eno1",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-b"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond0"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "eno2",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        }
+      ],
+      "name": "pve1",
+      "platform": {
+        "slug": "proxmox"
+      },
+      "role": {
+        "slug": "pve-node"
+      }
+    },
+    {
+      "custom_fields": {
+        "asn": 6,
+        "router_id": "10.255.0.12",
+        "sharpwire_managed": true
+      },
+      "interfaces": [
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond0",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:100::12/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 1500,
+          "name": "bond0.10",
+          "parent": {
+            "name": "bond0"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "1",
+            "vid": 10
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:101::12/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "bond0.101",
+          "parent": {
+            "name": "bond0"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "2",
+            "vid": 101
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:102::12/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "bond0.102",
+          "parent": {
+            "name": "bond0"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "3",
+            "vid": 102
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "10.250.0.12/24",
+              "status": "active"
+            },
+            {
+              "address": "2001:db8:250::12/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "bond0.300",
+          "parent": {
+            "name": "bond0"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "4",
+            "vid": 300
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:ffff::12/128",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": null,
+          "mtu": null,
+          "name": "dummy0",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-a"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond0"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "eno1",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-b"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond0"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "eno2",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        }
+      ],
+      "name": "pve2",
+      "platform": {
+        "slug": "proxmox"
+      },
+      "role": {
+        "slug": "pve-node"
+      }
+    },
+    {
+      "custom_fields": {
+        "asn": 7,
+        "router_id": "10.255.0.13",
+        "sharpwire_managed": true
+      },
+      "interfaces": [
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": null,
+          "mode": "tagged",
+          "mtu": 9216,
+          "name": "bond0",
+          "parent": null,
+          "tagged_vlans": [
+            {
+              "id": "1",
+              "vid": 10
+            },
+            {
+              "id": "2",
+              "vid": 101
+            },
+            {
+              "id": "3",
+              "vid": 102
+            },
+            {
+              "id": "4",
+              "vid": 300
+            }
+          ],
+          "type": "lag",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:100::13/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 1500,
+          "name": "bond0.10",
+          "parent": {
+            "name": "bond0"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "1",
+            "vid": 10
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:101::13/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "bond0.101",
+          "parent": {
+            "name": "bond0"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "2",
+            "vid": 101
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:102::13/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "bond0.102",
+          "parent": {
+            "name": "bond0"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "3",
+            "vid": 102
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "10.250.0.13/24",
+              "status": "active"
+            },
+            {
+              "address": "2001:db8:250::13/64",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": "access",
+          "mtu": 9216,
+          "name": "bond0.300",
+          "parent": {
+            "name": "bond0"
+          },
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": {
+            "id": "4",
+            "vid": 300
+          }
+        },
+        {
+          "connected_endpoints": [],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [
+            {
+              "address": "2001:db8:ffff::13/128",
+              "status": "active"
+            }
+          ],
+          "lag": null,
+          "mode": null,
+          "mtu": null,
+          "name": "dummy0",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "virtual",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-a"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond0"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "eno1",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        },
+        {
+          "connected_endpoints": [
+            {
+              "device": {
+                "name": "leaf-b"
+              }
+            }
+          ],
+          "custom_fields": {
+            "l2mtu": null,
+            "mlag_id": null
+          },
+          "ip_addresses": [],
+          "lag": {
+            "name": "bond0"
+          },
+          "mode": null,
+          "mtu": 9216,
+          "name": "eno2",
+          "parent": null,
+          "tagged_vlans": [],
+          "type": "10gbase-x-sfpp",
+          "untagged_vlan": null
+        }
+      ],
+      "name": "pve3",
+      "platform": {
+        "slug": "proxmox"
+      },
+      "role": {
+        "slug": "pve-node"
+      }
+    }
+  ],
+  "role_prefixes": [
+    {
+      "custom_fields": {
+        "max_subnet_length": 28
+      },
+      "prefix": "198.51.100.0/24",
+      "role": {
+        "slug": "public"
+      }
+    },
+    {
+      "custom_fields": {
+        "max_subnet_length": 64
+      },
+      "prefix": "2001:db8:70::/48",
+      "role": {
+        "slug": "public"
+      }
+    },
+    {
+      "custom_fields": {
+        "max_subnet_length": null
+      },
+      "prefix": "2001:db8:ffff::/64",
+      "role": {
+        "slug": "vtep"
+      }
+    }
+  ],
+  "vlan_list": [
+    {
+      "id": "1",
+      "name": "mgmt",
+      "role": {
+        "slug": "mgmt"
+      },
+      "vid": 10
+    },
+    {
+      "id": "2",
+      "name": "underlay-a",
+      "role": {
+        "slug": "underlay"
+      },
+      "vid": 101
+    },
+    {
+      "id": "3",
+      "name": "underlay-b",
+      "role": {
+        "slug": "underlay"
+      },
+      "vid": 102
+    },
+    {
+      "id": "4",
+      "name": "public-handoff",
+      "role": {
+        "slug": "public-handoff"
+      },
+      "vid": 300
+    }
+  ],
+  "vlan_prefixes": [
+    {
+      "prefix": "10.250.0.0/24",
+      "vlan": {
+        "id": "4",
+        "vid": 300
+      }
+    },
+    {
+      "prefix": "2001:db8:101::/64",
+      "vlan": {
+        "id": "2",
+        "vid": 101
+      }
+    },
+    {
+      "prefix": "2001:db8:102::/64",
+      "vlan": {
+        "id": "3",
+        "vid": 102
+      }
+    },
+    {
+      "prefix": "2001:db8:250::/64",
+      "vlan": {
+        "id": "4",
+        "vid": 300
+      }
+    }
+  ]
+}

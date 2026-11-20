@@ -5,10 +5,10 @@ Nov 20, 2026 · Draft
 ## Testing
 
 - **Unit and golden tests.**
-  - Each driver's output is compared with golden files rendered from NetBox-shaped fixtures; the network doc's examples are the first goldens (`tests/golden/`).
+  - Each driver's output is compared with golden files rendered from NetBox-shaped fixtures; the first goldens came from the network doc's examples, in the builder's canonical order (`tests/golden/`).
   - Every cross-target rule has a failing fixture.
   - Proxmox's merge is tested too: the rendered `frr.conf.local` goes through PVE's `append_local_config` and FRR templates, as in `spikes/node-linux/pve-merge/`, and the result is compared with a golden file.
-  - Once the intent builder exists, the fixtures become NetBox GraphQL snapshots fed through it.
+  - The intent builder is tested from a GraphQL snapshot captured from NetBox 4.7.5 with the plugin, seeded with the network doc's example (`tests/fixtures/netbox/`). It must build exactly the hand-written example network, and render the same golden files.
 - **Containerlab in CI.** Two CHRs act as cores, and FRR containers as nodes running the rendered `frr.conf.local`. Every driver change must pass:
   - render → apply → re-read gives an empty diff;
   - a withheld disarm makes the target revert;
@@ -31,7 +31,7 @@ Drift detection ships first, read-only, so the diff engine is proven before shar
    - `l2mtu`, LACP and MLAG on hardware.
 2. **Intent builder and NetBox plugin:**
    - the two plugin models, the custom fields, roles and tags ([Intent model](02-intent-model.md)): **done** (`netbox-plugin/`, NetBox 4.7);
-   - the GraphQL builder;
+   - the GraphQL builder: **done** (`app/intent/builder.py`, `app/services/netbox.py`);
    - the node bootstrap package.
 3. **Read-only drivers** for RouterOS and Proxmox, with drift detection and alerts. The RouterOS renderer and the intent model already exist (`app/drivers/routeros/`, `app/intent/`).
 4. **Cross-target validation**, run continuously against live state.

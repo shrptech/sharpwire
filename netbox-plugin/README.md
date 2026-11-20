@@ -48,4 +48,19 @@ uv run netbox makemigrations sharpwire_netbox      # after a model change
 uv run netbox migrate && uv run netbox runserver   # a local NetBox with the plugin, on the test config
 ```
 
+The controller's builder tests use a GraphQL snapshot of the network doc's example. To re-capture it after the
+intent query or the seed changes, seed an empty dev NetBox in its own database and capture from it:
+
+```sh
+export NETBOX_DB_NAME=netbox_example     # CREATE DATABASE netbox_example first, in the compose Postgres
+uv run netbox migrate
+uv run netbox shell --command "exec(open('testing/seed_example_network.py').read())"   # prints NETBOX_TOKEN
+uv run netbox runserver 127.0.0.1:8765
+# from the repo root:
+NETBOX_URL=http://127.0.0.1:8765 NETBOX_TOKEN=nbt_... uv run python -m tests.fixtures.netbox.capture
+NETBOX_URL=http://127.0.0.1:8765 NETBOX_TOKEN=nbt_... NETBOX_SEEDED_EXAMPLE=1 uv run pytest -m integration tests/integration
+```
+
+The seed refuses a NetBox that already has devices, and one without `DEVELOPER = True`: it creates `admin`/`admin`.
+
 Lint with the repo's ruff config: `uv run --project .. ruff check . && uv run --project .. ruff format --check .`

@@ -24,8 +24,10 @@ dev = [
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+# Integration tests talk to live services, so a plain `pytest` never runs them, even with NETBOX_URL set.
+addopts = ["-m", "not integration"]
 markers = [
-    "integration: requires live services: NetBox, and the containerlab or nested Proxmox lab (run with: pytest tests/integration/)",
+    "integration: requires live services: NetBox, and the containerlab or nested Proxmox lab (run with: pytest -m integration tests/integration/)",
 ]
 
 [tool.ruff]
