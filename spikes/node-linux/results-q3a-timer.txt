@@ -1,0 +1,30 @@
+Created symlink '/etc/systemd/system/sysinit.target.wants/sharpwire-restore.service' → '/etc/systemd/system/sharpwire-restore.service'.
+### (a) arm 30s, break mgmt, let it fire
+sharpwire-node: snapshot run1 -> /var/lib/sharpwire/rollback/run1
+sharpwire-node: armed run1, fires in 30s
+NEXT                        LEFT LAST PASSED UNIT                          ACTIVATES
+Fri 2026-11-20 05:15:42 CET  29s -         - sharpwire-rollback-run1.timer sharpwire-rollback-run1.service
+
+warning: /sbin/brctl: missing - bridge operation may not work as expected. Please check if 'bridge-utils' package is installed
+broken: bond0.10@bond0   UP             2001:db8:100::99/64 fe80::148b:7ff:fe9a:cc68/64 
+05:15:13
+05:15:48
+after fire: bond0.10@bond0   UP             2001:db8:100::11/64 fe80::148b:7ff:fe9a:cc68/64 
+    address 2001:db8:100::11/64
+ls: cannot access '/var/lib/sharpwire/armed': No such file or directory
+Nov 20 05:15:44.072999 lima-sharpwire-lab sharpwire-node[12582]: sharpwire-node: restore run1: ifreload rc=0
+Nov 20 05:15:44.073777 lima-sharpwire-lab sharpwire-node[12637]: restore run1: ifreload rc=0
+Nov 20 05:15:44.079993 lima-sharpwire-lab sharpwire-node[12582]: sharpwire-node: restored run1
+Nov 20 05:15:44.080766 lima-sharpwire-lab sharpwire-node[12640]: restored run1
+Unit sharpwire-rollback-run1.service could not be found.
+
+### (b) arm 20s then disarm
+sharpwire-node: snapshot run2 -> /var/lib/sharpwire/rollback/run2
+sharpwire-node: armed run2, fires in 20s
+warning: /sbin/brctl: missing - bridge operation may not work as expected. Please check if 'bridge-utils' package is installed
+sharpwire-node: disarmed run2
+NEXT LEFT LAST PASSED UNIT ACTIVATES
+
+ls: cannot access '/var/lib/sharpwire/armed': No such file or directory
+after T+N, disarmed: bond0.101@bond0  UP             2001:db8:101::77/64 fe80::148b:7ff:fe9a:cc68/64 
+warning: /sbin/brctl: missing - bridge operation may not work as expected. Please check if 'bridge-utils' package is installed

@@ -1,0 +1,21 @@
+# Emulates the vrf part of what PVE SDN writes to /etc/network/interfaces.d/sdn
+# for an EVPN zone "public" (vrf-vxlan 20000) on pve1 (VNet bridge omitted).
+auto vrf_public
+iface vrf_public
+	vrf-table auto
+
+auto vrfbr_public
+iface vrfbr_public
+	bridge-ports vrfvx_public
+	bridge_stp off
+	bridge_fd 0
+	mtu 1450
+	vrf vrf_public
+
+auto vrfvx_public
+iface vrfvx_public
+	vxlan-id 20000
+	vxlan-local-tunnelip 2001:db8:ffff::11
+	bridge-learning off
+	bridge-arp-nd-suppress on
+	mtu 1450

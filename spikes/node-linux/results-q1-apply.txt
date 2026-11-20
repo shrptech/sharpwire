@@ -1,0 +1,27 @@
+### ifreload -a -n
+rc=0
+### links after dry run:
+(no bond0/dummy0 exist -> dry run made no kernel changes)
+### ifreload -a
+rc=0
+lo               UNKNOWN        127.0.0.1/8 ::1/128 
+eno1@if3         UP             
+eno2@if5         UP             
+bond0            UP             fe80::148b:7ff:fe9a:cc68/64 
+bond0.10@bond0   UP             2001:db8:100::11/64 fe80::148b:7ff:fe9a:cc68/64 
+bond0.101@bond0  UP             2001:db8:101::11/64 fe80::148b:7ff:fe9a:cc68/64 
+bond0.102@bond0  UP             2001:db8:102::11/64 fe80::148b:7ff:fe9a:cc68/64 
+dummy0           UNKNOWN        2001:db8:ffff::11/128 fe80::9c53:b8ff:fec5:65b3/64 
+### default route
+default via 2001:db8:100::1 dev bond0.10 proto kernel metric 1024 onlink pref medium
+Bonding Mode: IEEE 802.3ad Dynamic link aggregation
+MII Status: up
+	Aggregator ID: 1
+	Number of ports: 2
+	Partner Mac Address: ee:69:fb:68:9a:59
+MII Status: up
+Aggregator ID: 1
+MII Status: up
+Aggregator ID: 1
+2 packets transmitted, 2 received, 0% packet loss, time 1030ms
+rtt min/avg/max/mdev = 0.124/0.125/0.127/0.001 ms

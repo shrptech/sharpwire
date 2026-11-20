@@ -1,0 +1,32 @@
+## baseline
+bgp state=Established uptime=00:00:23 established=1 dropped=0
+bfd status=up uptime=22s
+## 1) no-op frr-reload.py --reload (file == what was loaded)
+rc=0
+bgp state=Established uptime=00:00:02 established=2 dropped=1
+bfd status=up uptime=2s
+## 2) change unrelated route-map (PUB-OUT add entry) + reload
+rc=0
+6
+bgp state=Established uptime=00:00:02 established=3 dropped=2
+bfd status=up uptime=2s
+## 3) change a route-map USED by the session (UL-OUT add a second loopback) + reload
+rc=0
+bgp state=Established uptime=00:00:02 established=4 dropped=3
+bfd status=up uptime=3s
+## 4) router-id flip (duplicate 'bgp router-id' lines, as PVE's merge produces) + reload
+reload 1 rc=0
+ bgp router-id 203.0.113.17
+bgp state=Established uptime=00:00:03 established=5 dropped=4
+bfd status=up uptime=3s
+reload 2 rc=0
+ bgp router-id 10.255.0.11
+bgp state=Established uptime=00:00:03 established=6 dropped=5
+bfd status=up uptime=3s
+## 5) systemctl restart frr (baseline)
+bgp state=Established uptime=00:00:07 established=7 dropped=6
+bfd status=up uptime=7s
+bgp state=Idle uptime=None established=7 dropped=7
+bfd status=down uptime=Nones
+bgp state=Established uptime=00:00:07 established=8 dropped=7
+bfd status=up uptime=6s

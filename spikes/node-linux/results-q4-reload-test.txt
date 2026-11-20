@@ -1,0 +1,56 @@
+### frr-reload.py --test /etc/frr/frr.conf right after restart from the same file
+Lines To Delete
+===============
+no hostname lima-sharpwire-lab
+router bgp 65000
+ no use-underlays-nexthop-weight
+exit
+router bgp 65000 vrf vrf_public
+ no use-underlays-nexthop-weight
+exit
+
+Lines To Add
+============
+router bgp 65000
+ bgp router-id 203.0.113.17
+exit
+router bgp 65000 vrf vrf_public
+ address-family ipv4 unicast
+  neighbor CORE activate
+ exit
+exit
+router bgp 65000 vrf vrf_public
+ address-family l2vpn evpn
+  advertise ipv4 unicast
+ exit
+exit
+router bgp 65000 vrf vrf_public
+ address-family l2vpn evpn
+  advertise ipv6 unicast
+ exit
+exit
+frr version 10.6.1
+hostname pve1
+router bgp 65000
+ address-family ipv4 unicast
+ exit
+exit
+router bgp 65000
+ address-family ipv4 unicast
+  no neighbor UL activate
+ exit
+exit
+line vty
+exit
+### show bfd peers (profiles referenced but not defined)
+% Unknown command: show bfd profiles
+Session count: 10
+SessionId  LocalAddress                             PeerAddress                             Status          Profile             
+=========  ============                             ===========                             ======          =======             
+1152117262 unknown                                  2001:db8:102::1                         down            underlay            
+3033045070 unknown                                  2001:db8:250::2                         down            underlay            
+846445032  unknown                                  2001:db8:101::1                         down            underlay            
+2816695765 2001:db8:ffff::11                        2001:db8:ffff::13                       down            overlay             
+4198516625 2001:db8:ffff::11                        2001:db8:ffff::102                      down            overlay             
+998162903  unknown                                  10.250.0.1                              down            underlay            
+1136518309 2001:db8:ffff::11                        2001:db8:ffff::12                       down            overlay             

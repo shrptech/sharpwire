@@ -1,0 +1,43 @@
+### baseline: ifquery --check -a
+rc=0
+### full output sample (bond0.10):
+auto bond0.10
+iface bond0.10 inet6 static                                         [pass]
+	mtu 1500                                                    [pass]
+	accept_ra 0                                                 [pass]
+	address 2001:db8:100::11/64                                 [pass]
+
+### (a) out-of-band: ip addr add 2001:db8:101::99/64 dev bond0.101
+rc=1
+iface bond0.101 inet6 static                                        [fail]
+	address 2001:db8:101::99/64                                 [fail]
+### (a2) out-of-band: ip link set bond0.102 mtu 1500
+rc=1
+iface bond0.101 inet6 static                                        [fail]
+	address 2001:db8:101::99/64                                 [fail]
+iface bond0.102 inet6 static                                        [fail]
+	mtu 1500                                                    [fail]
+### reload to clean
+bond0.101@bond0  UP             2001:db8:101::11/64 fe80::148b:7ff:fe9a:cc68/64 
+rc=0
+### (a3) out-of-band: ip addr del 2001:db8:100::11/64 dev bond0.10 (mgmt address removed)
+rc=1
+iface bond0.10 inet6 static                                         [fail]
+	address 2001:db8:100::11/64                                 [fail]
+### (a4) out-of-band: ip -6 route del default
+rc=0
+default via 2001:db8:100::1 dev bond0.10 proto kernel metric 1024 onlink pref medium
+### (a5) out-of-band: bond0.300 created by hand (not in file)
+rc=0
+### (b) file edited, not reloaded: bond0.101 address ::11 -> ::21
+rc=1
+iface bond0.101 inet6 static                                        [fail]
+	address 2001:db8:101::21/64                                 [fail]
+	address 2001:db8:101::11/64                                 [fail]
+### (b2) file edited, not reloaded: new stanza bond0.300 added
+rc=1
+iface bond0.300                                                     [fail]
+### (b3) file edited, not reloaded: stanza bond0.102 removed
+rc=0
+### restored
+rc=0

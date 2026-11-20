@@ -1,0 +1,15 @@
+	peer 2001:db8:ffff::12 multihop local-address 2001:db8:ffff::11 vrf default
+			Detect-multiplier: 5
+### single neighbor (non peer-group) inline timers
+ neighbor 2001:db8:101::99 remote-as external
+ neighbor 2001:db8:101::99 bfd
+			Detect-multiplier: 4
+			Receive interval: 400ms
+### bfd profile defined in vtysh + referenced: shown in running-config?
+bfd
+ profile overlay
+  detect-multiplier 5
+ exit
+ !
+exit
+			Detect-multiplier: 5

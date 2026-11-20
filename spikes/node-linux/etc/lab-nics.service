@@ -1,0 +1,15 @@
+# Lab only: create the emulated NICs (eno1/eno2 veths + netns "leaf") before ifupdown2 runs.
+[Unit]
+Description=sharpwire lab: emulate pve1 NICs and leaf
+DefaultDependencies=no
+After=local-fs.target systemd-modules-load.service
+Before=network-pre.target networking.service sharpwire-restore.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/lab-nics.sh
+
+[Install]
+WantedBy=multi-user.target

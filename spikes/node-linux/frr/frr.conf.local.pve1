@@ -1,0 +1,117 @@
+! /etc/frr/frr.conf.local (pve1)
+bfd
+ profile underlay
+  receive-interval 300
+  transmit-interval 300
+  detect-multiplier 3
+ !
+ profile overlay
+  receive-interval 300
+  transmit-interval 300
+  detect-multiplier 5
+ !
+exit
+!
+ipv6 prefix-list UL-IN seq 10 permit 2001:db8:ffff::/64 ge 128
+ipv6 prefix-list UL-OUT seq 10 permit 2001:db8:ffff::11/128
+!
+route-map UL-IN permit 10
+ match ipv6 address prefix-list UL-IN
+ set ipv6 next-hop prefer-global
+exit
+!
+route-map UL-OUT permit 10
+ match ipv6 address prefix-list UL-OUT
+exit
+!
+router bgp 65000
+ bgp router-id 10.255.0.11
+ bgp bestpath as-path multipath-relax
+ neighbor UL peer-group
+ neighbor UL remote-as external
+ neighbor UL local-as 4200000011 no-prepend replace-as
+ neighbor UL bfd
+ neighbor UL bfd profile underlay
+ neighbor 2001:db8:101::1 peer-group UL
+ neighbor 2001:db8:102::1 peer-group UL
+ neighbor VTEP update-source dummy0
+ neighbor VTEP bfd profile overlay
+ !
+ address-family ipv4 unicast
+  no neighbor UL activate
+ exit-address-family
+ !
+ address-family ipv6 unicast
+  network 2001:db8:ffff::11/128
+  neighbor UL activate
+  neighbor UL route-map UL-IN in
+  neighbor UL route-map UL-OUT out
+  maximum-paths 4
+ exit-address-family
+exit
+!
+ip prefix-list PUB4 seq 10 permit 198.51.100.0/24 le 28
+ipv6 prefix-list PUB6 seq 10 permit 2001:db8:70::/48 le 64
+ip prefix-list DEF4 seq 10 permit 0.0.0.0/0
+ipv6 prefix-list DEF6 seq 10 permit ::/0
+!
+route-map PUB-OUT permit 10
+ match ip address prefix-list PUB4
+exit
+route-map PUB-OUT permit 20
+ match ipv6 address prefix-list PUB6
+exit
+route-map DEFAULT-ONLY permit 10
+ match ip address prefix-list DEF4
+exit
+route-map DEFAULT-ONLY permit 20
+ match ipv6 address prefix-list DEF6
+ set ipv6 next-hop prefer-global
+exit
+route-map NO-DEFAULT deny 10
+ match ip address prefix-list DEF4
+exit
+route-map NO-DEFAULT deny 20
+ match ipv6 address prefix-list DEF6
+exit
+route-map NO-DEFAULT permit 100
+exit
+!
+router bgp 65000 vrf vrf_public
+ neighbor CORE peer-group
+ neighbor CORE remote-as external
+ neighbor CORE local-as 4200000100 no-prepend replace-as
+ neighbor CORE bfd
+ neighbor CORE bfd profile underlay
+ neighbor CORE6 peer-group
+ neighbor CORE6 remote-as external
+ neighbor CORE6 local-as 4200000100 no-prepend replace-as
+ neighbor CORE6 bfd
+ neighbor CORE6 bfd profile underlay
+ neighbor 10.250.0.1 peer-group CORE
+ neighbor 10.250.0.2 peer-group CORE
+ neighbor 2001:db8:250::1 peer-group CORE6
+ neighbor 2001:db8:250::2 peer-group CORE6
+ !
+ address-family ipv4 unicast
+  redistribute connected
+  neighbor CORE activate
+  neighbor CORE6 deactivate
+  neighbor CORE route-map DEFAULT-ONLY in
+  neighbor CORE route-map PUB-OUT out
+  maximum-paths 2
+ exit-address-family
+ !
+ address-family ipv6 unicast
+  redistribute connected
+  neighbor CORE6 activate
+  neighbor CORE6 route-map DEFAULT-ONLY in
+  neighbor CORE6 route-map PUB-OUT out
+  maximum-paths 2
+ exit-address-family
+ !
+ address-family l2vpn evpn
+  advertise ipv4 unicast route-map NO-DEFAULT
+  advertise ipv6 unicast route-map NO-DEFAULT
+ exit-address-family
+exit

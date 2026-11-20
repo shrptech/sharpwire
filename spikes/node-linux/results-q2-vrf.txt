@@ -1,0 +1,44 @@
+### vrf_public exists?
+Device "vrf_public" does not exist.
+### ifreload -a -s
+warning: bond0.300: interface not recognized - please check interface configuration
+rc=0
+### ifreload -a -n
+error: NetlinkListenerWithCache.link_add_vlan_dry_run() takes from 4 to 5 positional arguments but 6 were given
+warning: bond0.300: device not found - please check your configuration
+rc=0
+### ifreload -a
+error: bond0.300: vrf master ifaceobj vrf_public not found
+rc=1
+14: bond0.300@bond0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9216 qdisc noqueue state UP mode DEFAULT group default qlen 1000
+    link/ether 16:8b:07:9a:cc:68 brd ff:ff:ff:ff:ff:ff promiscuity 0 allmulti 0 minmtu 0 maxmtu 65535 
+    vlan protocol 802.1Q id 300 <REORDER_HDR> addrgenmode eui64 numtxqueues 1 numrxqueues 1 gso_max_size 65536 gso_max_segs 65535 tso_max_size 524280 tso_max_segs 65535 gro_max_size 65536 gso_ipv4_max_size 65536 gro_ipv4_max_size 65536 
+bond0.300@bond0  UP             10.250.0.11/24 2001:db8:250::11/64 fe80::148b:7ff:fe9a:cc68/64 
+### ip -6 route show 2001:db8:250::/64 (main table)
+2001:db8:250::/64 dev bond0.300 proto kernel metric 256 pref medium
+### ifquery --check bond0.300
+auto bond0.300
+iface bond0.300                                                     [fail]
+	vrf None                                                    [fail]
+	mtu 9216                                                    [pass]
+	accept_ra 0                                                 [pass]
+	address 10.250.0.11/24                                      [pass]
+	address 2001:db8:250::11/64                                 [pass]
+
+rc=1
+
+### now SDN writes interfaces.d/sdn defining vrf_public; ifreload -a
+warning: /sbin/brctl: missing - bridge operation may not work as expected. Please check if 'bridge-utils' package is installed
+rc=0
+vrf_public       UP             ca:a9:82:69:ab:c3 <NOARP,MASTER,UP,LOWER_UP> 
+master vrf_public
+bond0.300@bond0  UP             10.250.0.11/24 2001:db8:250::11/64 fe80::148b:7ff:fe9a:cc68/64 
+### main table
+### vrf_public table
+2001:db8:250::/64 dev bond0.300 proto kernel metric 256 pref medium
+10.250.0.0/24 dev bond0.300 proto kernel scope link src 10.250.0.11 
+### ifquery --check -a
+rc=0
+vrfvx_public     UNKNOWN        6a:ee:3c:20:37:97 <BROADCAST,MULTICAST,UP,LOWER_UP> 
+vrfbr_public     DOWN           66:ab:0e:23:a3:a9 <NO-CARRIER,BROADCAST,MULTICAST,UP,LOWER_UP> 
+vrf_public       UP             ca:a9:82:69:ab:c3 <NOARP,MASTER,UP,LOWER_UP> 

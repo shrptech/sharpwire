@@ -1,0 +1,18 @@
+[Unit]
+Description=sharpwire: restore armed node-file snapshot at boot
+Documentation=file:///usr/local/sbin/sharpwire-node
+DefaultDependencies=no
+# /var/lib must be mounted (PVE: /var is on root LV, but be explicit)
+RequiresMountsFor=/var/lib/sharpwire
+After=local-fs.target systemd-sysctl.service
+Before=network-pre.target networking.service frr.service pve-cluster.service corosync.service
+Wants=network-pre.target
+ConditionPathExists=/var/lib/sharpwire/armed
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/sharpwire-node boot-restore
+
+[Install]
+WantedBy=sysinit.target

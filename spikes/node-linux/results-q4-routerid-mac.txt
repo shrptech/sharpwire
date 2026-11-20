@@ -1,0 +1,6 @@
+warning: vrfbr_public: bridge-fd: value of out range "0": valid attribute range: 2-255
+warning: vrfbr_public: bridge inherits mtu from its ports. There is no need to assign mtu on a bridge
+rc=0
+dummy0           UNKNOWN        02:00:0a:ff:00:0b <BROADCAST,NOARP,UP,LOWER_UP> 
+PVE get_router_id(dummy0) => 10.255.0.11
+	hwaddress 02:00:0a:ff:00:0b                                 [pass]

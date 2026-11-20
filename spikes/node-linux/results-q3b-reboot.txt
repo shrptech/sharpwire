@@ -1,0 +1,38 @@
+sharpwire-node: snapshot run3 -> /var/lib/sharpwire/rollback/run3
+sharpwire-node: armed run3, fires in 600s
+before reboot: bond0.10@bond0   UP             fe80::148b:7ff:fe9a:cc68/64  fwd=0 marker=run3
+after boot: bond0.10@bond0   UP             2001:db8:100::11/64 fe80::dc79:c7ff:fe62:2c84/64  fwd=1
+ls: cannot access '/var/lib/sharpwire/armed': No such file or directory
+0
+default via 2001:db8:100::1 dev bond0.10 proto kernel metric 1024 onlink pref medium
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+NEXT LEFT LAST PASSED UNIT ACTIVATES
+
+### boot ordering (monotonic)
+### ordering cycles?
+Nov 20 05:16:46 lima-sharpwire-lab sudo[1496]:     olhe : PWD=/Users/olhe/git/sharpwire ; USER=root ; COMMAND=/usr/bin/bash -c '#012echo "after boot: $(ip -br -6 a show bond0.10) fwd=$(sysctl -n net.ipv6.conf.all.forwarding)"; ls /var/lib/sharpwire/armed 2>&1; grep -c BROKEN-MARKER /etc/frr/frr.conf#012ip -6 route show default; ping -6 -c1 -W1 2001:db8:100::1 | grep -E \'received\'#012systemctl list-timers \'sharpwire-rollback-*\' --no-pager | head -2#012echo \'### boot ordering (monotonic)\'#012journalctl -b -o short-monotonic --no-pager _SYSTEMD_UNIT=sharpwire-restore.service -t sharpwire-node + -u sharpwire-restore.service -u lab-nics.service -u networking.service -u frr.service -u systemd-sysctl.service 2>/dev/null | grep -E \'Start|Finish|sharpwire-node|watchfrr|Started|Finished\' | head -20#012echo \'### ordering cycles?\'; journalctl -b --no-pager | grep -i \'ordering cycle\' || echo none#012systemd-analyze critical-chain networking.service --no-pager | head -12#012'
+The time when unit became active or started is printed after the "@" character.
+The time the unit took to start is printed after the "+" character.
+
+networking.service +1.725s
+└─network-pre.target @1.523s
+  └─sharpwire-restore.service @1.473s +49ms
+    └─lab-nics.service @1.352s +120ms
+      └─local-fs.target @1.349s
+        └─mnt-lima\x2dcidata.mount @3.969s
+          └─dev-vdb.device @394ms
+[    0.702227] lima-sharpwire-lab systemd[1]: Starting systemd-sysctl.service - Apply Kernel Variables...
+[    0.702283] lima-sharpwire-lab systemd[1]: Finished systemd-sysctl.service - Apply Kernel Variables.
+[    1.746382] lima-sharpwire-lab systemd[1]: Starting lab-nics.service - sharpwire lab: emulate pve1 NICs and leaf...
+[    1.866685] lima-sharpwire-lab systemd[1]: Finished lab-nics.service - sharpwire lab: emulate pve1 NICs and leaf.
+[    1.867988] lima-sharpwire-lab systemd[1]: Starting sharpwire-restore.service - sharpwire: restore armed node-file snapshot at boot...
+[    1.888125] lima-sharpwire-lab sharpwire-node[610]: sharpwire-node: restoring run3 --boot
+[    1.889988] lima-sharpwire-lab sharpwire-node[612]: restoring run3 --boot
+[    1.915687] lima-sharpwire-lab sharpwire-node[610]: sharpwire-node: restored run3
+[    1.916375] lima-sharpwire-lab sharpwire-node[633]: restored run3
+[    1.916995] lima-sharpwire-lab systemd[1]: Finished sharpwire-restore.service - sharpwire: restore armed node-file snapshot at boot.
+[    1.917791] lima-sharpwire-lab systemd[1]: Starting networking.service - Network initialization...
+[    3.643378] lima-sharpwire-lab systemd[1]: Finished networking.service - Network initialization.
+[    4.054679] lima-sharpwire-lab systemd[1]: Starting frr.service - FRRouting...
+[    4.237236] lima-sharpwire-lab systemd[1]: Started frr.service - FRRouting.
+2

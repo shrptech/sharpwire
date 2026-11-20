@@ -1,0 +1,167 @@
+### vtysh -C -f frr/frr.conf.local.pve1.fixed
+rc=0
+### vtysh -C -f pve-merge/frr.conf.merged.pve1.fixed
+rc=0
+### frr-reload.py --test merged.fixed
+rc=0
+### load merged.fixed as /etc/frr/frr.conf and restart
+active
+Nov 20 05:19:54 lima-sharpwire-lab zebra[837]: [X55T4-ZADN1][EC 4043309149] Client 35 'static' (session id 0) encountered an error and is shutting down.
+Nov 20 05:19:54 lima-sharpwire-lab zebra[837]: [M6GBJ-2NV1J][EC 4043309121] ../zebra/zebra_ptm.c:1277 failed to find process pid registration
+Nov 20 05:19:54 lima-sharpwire-lab watchfrr[1718]: [ZCJ3S-SPH5S] mgmtd state -> down : initial connection attempt failed
+Nov 20 05:19:54 lima-sharpwire-lab watchfrr[1718]: [ZCJ3S-SPH5S] zebra state -> down : initial connection attempt failed
+Nov 20 05:19:54 lima-sharpwire-lab watchfrr[1718]: [ZCJ3S-SPH5S] bfdd state -> down : initial connection attempt failed
+Nov 20 05:19:54 lima-sharpwire-lab watchfrr[1718]: [ZCJ3S-SPH5S] bgpd state -> down : initial connection attempt failed
+Nov 20 05:19:54 lima-sharpwire-lab watchfrr[1718]: [ZCJ3S-SPH5S] staticd state -> down : initial connection attempt failed
+Nov 20 05:19:54 lima-sharpwire-lab frrinit.sh[1731]: 2026/11/20 05:19:54 ZEBRA: [SAPXX-HP5B5][EC 4043309108] Extended Error: failed to retrieve link settings
+Nov 20 05:19:54 lima-sharpwire-lab frrinit.sh[1731]: 2026/11/20 05:19:54 ZEBRA: [WVJCK-PPMGD][EC 4043309093] generic-netlink-cmd (NS 0) error: Operation not supported, type=RTM_DELADDR(21), seq=3, pid=1731
+Nov 20 05:19:54 lima-sharpwire-lab frrinit.sh[1731]: 2026/11/20 05:19:54 ZEBRA: [SAPXX-HP5B5][EC 4043309108] Extended Error: failed to retrieve link settings
+Building configuration...
+
+Current configuration:
+!
+frr version 10.7.1
+frr defaults datacenter
+hostname lima-sharpwire-lab
+log syslog informational
+service integrated-vtysh-config
+!
+ip prefix-list DEF4 seq 10 permit 0.0.0.0/0
+ip prefix-list PUB4 seq 10 permit 198.51.100.0/24 le 28
+!
+ipv6 prefix-list DEF6 seq 10 permit ::/0
+ipv6 prefix-list PUB6 seq 10 permit 2001:db8:70::/48 le 64
+ipv6 prefix-list UL-IN seq 10 permit 2001:db8:ffff::/64 ge 128
+ipv6 prefix-list UL-OUT seq 10 permit 2001:db8:ffff::11/128
+!
+route-map DEFAULT-ONLY permit 1
+ match ip address prefix-list DEF4
+exit
+!
+route-map DEFAULT-ONLY permit 2
+ match ipv6 address prefix-list DEF6
+ set ipv6 next-hop prefer-global
+exit
+!
+route-map MAP_VTEP_IN permit 1
+exit
+!
+route-map MAP_VTEP_OUT permit 1
+exit
+!
+route-map NO-DEFAULT deny 1
+ match ip address prefix-list DEF4
+exit
+!
+route-map NO-DEFAULT deny 2
+ match ipv6 address prefix-list DEF6
+exit
+!
+route-map NO-DEFAULT permit 3
+exit
+!
+route-map PUB-OUT permit 1
+ match ip address prefix-list PUB4
+exit
+!
+route-map PUB-OUT permit 2
+ match ipv6 address prefix-list PUB6
+exit
+!
+route-map UL-IN permit 1
+ match ipv6 address prefix-list UL-IN
+ set ipv6 next-hop prefer-global
+exit
+!
+route-map UL-OUT permit 1
+ match ipv6 address prefix-list UL-OUT
+exit
+!
+vrf vrf_public
+ vni 20000
+exit-vrf
+!
+router bgp 65000
+ bgp router-id 10.255.0.11
+ no bgp hard-administrative-reset
+ no bgp default ipv4-unicast
+ coalesce-time 1000
+ no bgp graceful-restart notification
+ bgp bestpath as-path multipath-relax
+ neighbor UL peer-group
+ neighbor UL remote-as external
+ neighbor UL local-as 4200000011 no-prepend replace-as
+ neighbor UL bfd
+ neighbor UL bfd profile underlay
+ neighbor VTEP peer-group
+ neighbor VTEP remote-as 65000
+ neighbor VTEP bfd
+ neighbor VTEP bfd profile overlay
+ neighbor VTEP update-source dummy0
+ neighbor 2001:db8:101::1 peer-group UL
+ neighbor 2001:db8:102::1 peer-group UL
+ neighbor 2001:db8:ffff::12 peer-group VTEP
+ neighbor 2001:db8:ffff::13 peer-group VTEP
+ neighbor 2001:db8:ffff::101 peer-group VTEP
+ neighbor 2001:db8:ffff::102 peer-group VTEP
+ use-underlays-nexthop-weight
+ !
+ address-family ipv6 unicast
+  network 2001:db8:ffff::11/128
+  neighbor UL activate
+  neighbor UL route-map UL-IN in
+  neighbor UL route-map UL-OUT out
+  maximum-paths 4
+ exit-address-family
+ !
+ address-family l2vpn evpn
+  neighbor VTEP activate
+  neighbor VTEP route-map MAP_VTEP_IN in
+  neighbor VTEP route-map MAP_VTEP_OUT out
+  advertise-all-vni
+ exit-address-family
+exit
+!
+router bgp 65000 vrf vrf_public
+ bgp router-id 203.0.113.17
+ no bgp hard-administrative-reset
+ no bgp graceful-restart notification
+ neighbor CORE peer-group
+ neighbor CORE remote-as external
+ neighbor CORE local-as 4200000100 no-prepend replace-as
+ neighbor CORE bfd
+ neighbor CORE bfd profile underlay
+ neighbor CORE6 peer-group
+ neighbor CORE6 remote-as external
+ neighbor CORE6 local-as 4200000100 no-prepend replace-as
+ neighbor CORE6 bfd
+ neighbor CORE6 bfd profile underlay
+ neighbor 10.250.0.1 peer-group CORE
+ neighbor 10.250.0.2 peer-group CORE
+ neighbor 2001:db8:250::1 peer-group CORE6
+ neighbor 2001:db8:250::2 peer-group CORE6
+ use-underlays-nexthop-weight
+ !
+ address-family ipv4 unicast
+  redistribute connected
+  neighbor CORE route-map DEFAULT-ONLY in
+  neighbor CORE route-map PUB-OUT out
+  no neighbor CORE6 activate
+  maximum-paths 2
+ exit-address-family
+ !
+ address-family ipv6 unicast
+  redistribute connected
+  neighbor CORE6 activate
+  neighbor CORE6 route-map DEFAULT-ONLY in
+  neighbor CORE6 route-map PUB-OUT out
+  maximum-paths 2
+ exit-address-family
+ !
+ address-family l2vpn evpn
+  advertise ipv4 unicast route-map NO-DEFAULT
+  advertise ipv6 unicast route-map NO-DEFAULT
+ exit-address-family
+exit
+!
+end

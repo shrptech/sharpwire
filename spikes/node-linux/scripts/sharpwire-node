@@ -1,0 +1,96 @@
+#!/bin/bash
+# sharpwire-node -- SPIKE-QUALITY root helper for Proxmox node host files.
+#   snapshot <id>      copy managed files (+ generated frr.conf) to $STATE/rollback/<id>/
+#   arm <id> <secs>    write marker, start transient timer sharpwire-rollback-<id> (fires restore)
+#   disarm <id>        stop the timer, then remove the marker
+#   restore <id> [--boot]  put snapshot back; reload unless --boot (boot: networking.service follows)
+#   boot-restore       ExecStart of sharpwire-restore.service: restore marker's run-id, no reload
+#   validate           ifreload -a -s (syntax) + ifreload -a -n (preview); non-zero on warnings/errors
+#   drift              ifquery --check -a plus the gaps it does not cover (see FINDINGS.md)
+#   frr-reload         frr-reload.py --test then --reload /etc/frr/frr.conf
+#   postmerge-check <router-id>   checks against vtysh 'show running-config'
+set -u
+STATE=${SHARPWIRE_STATE:-/var/lib/sharpwire}
+MARKER=$STATE/armed
+FILES=(/etc/network/interfaces /etc/sysctl.d/90-sdn.conf /etc/frr/frr.conf.local /etc/frr/frr.conf /etc/hosts)
+log(){ echo "sharpwire-node: $*" >&2; logger -t sharpwire-node -- "$*" 2>/dev/null || true; }
+die(){ log "ERROR: $*"; exit 1; }
+idok(){ [[ $1 =~ ^[A-Za-z0-9_-]{1,64}$ ]] || die "bad run id"; }
+
+snapshot(){ idok "$1"; local d=$STATE/rollback/$1; mkdir -p "$d" || die mkdir
+  : > "$d/MANIFEST"
+  for f in "${FILES[@]}"; do
+    if [ -e "$f" ]; then install -D -p -m "$(stat -c %a "$f")" "$f" "$d/files$f"; echo "present $f" >> "$d/MANIFEST"
+    else echo "absent $f" >> "$d/MANIFEST"; fi
+  done; sync; log "snapshot $1 -> $d"; }
+
+arm(){ idok "$1"; local secs=$2; [ -d "$STATE/rollback/$1" ] || die "no snapshot $1"
+  echo "$1" > "$MARKER.tmp" && sync && mv "$MARKER.tmp" "$MARKER" && sync
+  systemctl is-enabled -q sharpwire-restore.service || die "sharpwire-restore.service not enabled"
+  systemd-run --quiet --collect --on-active="${secs}s" --timer-property=AccuracySec=1s \
+    --unit "sharpwire-rollback-$1" /usr/local/sbin/sharpwire-node restore "$1" || die "systemd-run failed"
+  log "armed $1, fires in ${secs}s"; }
+
+disarm(){ idok "$1"; systemctl stop "sharpwire-rollback-$1.timer" 2>/dev/null
+  # if the restore service is already running, do not pull the marker out from under it
+  systemctl is-active -q "sharpwire-rollback-$1.service" && die "rollback already firing"
+  [ "$(cat "$MARKER" 2>/dev/null)" = "$1" ] && rm -f "$MARKER" && sync; log "disarmed $1"; }
+
+put_back(){ local d=$STATE/rollback/$1
+  [ -f "$d/MANIFEST" ] || die "no snapshot $1"
+  while read -r st f; do
+    if [ "$st" = present ]; then install -D -p -m "$(stat -c %a "$d/files$f")" "$d/files$f" "$f.sw-tmp" && mv "$f.sw-tmp" "$f"
+    else rm -f "$f"; fi
+  done < "$d/MANIFEST"; sync; }
+
+restore(){ idok "$1"; log "restoring $1 ${2:-}"; put_back "$1"
+  if [ "${2:-}" = --boot ]; then
+    /usr/lib/systemd/systemd-sysctl   # systemd-sysctl.service already ran before us
+  else
+    mkdir -p /run/network; ifreload -a; local rc=$?; sysctl -q --system
+    systemctl -q is-active frr && /usr/lib/frr/frr-reload.py --reload /etc/frr/frr.conf >/dev/null 2>&1
+    log "restore $1: ifreload rc=$rc"
+  fi
+  rm -f "$MARKER"; sync; log "restored $1"; }
+
+boot_restore(){ [ -f "$MARKER" ] || exit 0; restore "$(cat "$MARKER")" --boot; }
+
+validate(){ mkdir -p /run/network; local out rc=0
+  out=$(ifreload -a -s 2>&1) || rc=1; [ -n "$out" ] && { echo "$out"; rc=1; }
+  out=$(ifreload -a -n 2>&1 | grep -v "_dry_run()") ; [ -n "$out" ] && { echo "$out"; rc=1; }
+  return $rc; }
+
+drift(){ local rc=0
+  ifquery --check -a >/tmp/sw-q 2>&1 || { grep -E "\[fail\]" /tmp/sw-q; rc=1; }
+  # gaps: gateway/default route, interfaces running but not in any file
+  local gw; gw=$(ifquery -a 2>/dev/null | awk '/^\s*gateway/{print $2}')
+  for g in $gw; do ip -6 route show default | grep -q "via $g " || { echo "missing default via $g"; rc=1; }; done
+  local cfg; cfg=$(ifquery -a -l 2>/dev/null | sort)
+  for i in $(ip -br link | awk '{print $1}' | cut -d@ -f1); do
+    case $i in lo|eth0|enp*|tap*|veth*|fwbr*|fwpr*|fwln*) continue;; esac
+    grep -qx "$i" <<<"$cfg" || { echo "running but not in file: $i"; rc=1; }
+  done; return $rc; }
+
+frr_reload(){ /usr/lib/frr/frr-reload.py --test /etc/frr/frr.conf >/dev/null || die "frr-reload --test failed"
+  /usr/lib/frr/frr-reload.py --reload /etc/frr/frr.conf; }
+
+postmerge(){ local rid=$1 run rc=0; run=$(vtysh -c 'show running-config') || die vtysh
+  # top-level router bgp (default VRF) block only
+  local def; def=$(awk '/^router bgp [0-9]+$/{f=1} f{print} f&&/^exit$/{exit}' <<<"$run")
+  local pub; pub=$(awk '/^router bgp [0-9]+ vrf vrf_public$/{f=1} f{print} f&&/^exit$/{exit}' <<<"$run")
+  grep -qx " bgp router-id $rid" <<<"$def" || { echo "FAIL router-id $rid not in default router bgp"; rc=1; }
+  grep -qx " neighbor VTEP update-source dummy0" <<<"$def" || { echo "FAIL VTEP update-source dummy0"; rc=1; }
+  if [ -n "$pub" ]; then
+    local evpn; evpn=$(awk '/^ address-family l2vpn evpn$/{f=1} f{print} f&&/exit-address-family/{exit}' <<<"$pub")
+    for af in ipv4 ipv6; do
+      grep -qx "  advertise $af unicast route-map NO-DEFAULT" <<<"$evpn" || { echo "FAIL vrf_public advertise $af without NO-DEFAULT"; rc=1; }
+    done
+  fi
+  grep -q "^bfd$" <<<"$run" && grep -q "^ profile underlay$" <<<"$run" || { echo "FAIL bfd profile underlay missing"; rc=1; }
+  [ $rc = 0 ] && echo "postmerge OK"; return $rc; }
+
+cmd=${1:-}; shift || true
+case $cmd in
+  snapshot) snapshot "$@";; arm) arm "$@";; disarm) disarm "$@";; restore) restore "$@";;
+  boot-restore) boot_restore;; validate) validate;; drift) drift;; frr-reload) frr_reload;;
+  postmerge-check) postmerge "$@";; *) die "usage: see header";; esac

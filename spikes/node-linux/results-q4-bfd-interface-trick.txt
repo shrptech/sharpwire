@@ -1,0 +1,24 @@
+parse_rc=0
+-- frr-reload --test: bgp lines
+   bgp state=Established established=21 dropped=20
+   bgp state=Established established=21 dropped=20
+   bgp state=Established established=21 dropped=20
+-- post-merge check
+postmerge OK
+rc=0
+Session count: 10
+SessionId  LocalAddress                             PeerAddress                             Status          Profile             
+=========  ============                             ===========                             ======          =======             
+1247524735 2001:db8:102::11                         2001:db8:102::1                         down            underlay            
+3799304487 2001:db8:ffff::11                        2001:db8:ffff::101                      down            overlay             
+3598330761 2001:db8:ffff::11                        2001:db8:ffff::12                       down            overlay             
+2850471263 unknown                                  10.250.0.2                              down            underlay            
+3910717522 2001:db8:ffff::11                        2001:db8:ffff::13                       down            overlay             
+3907551584 unknown                                  2001:db8:250::1                         down            underlay            
+3855686697 unknown                                  10.250.0.1                              down            underlay            
+2092425918 2001:db8:ffff::11                        2001:db8:ffff::102                      down            overlay             
+1370691049 unknown                                  2001:db8:250::2                         down            underlay            
+1822401935 2001:db8:101::11                         2001:db8:101::1                         up              underlay            
+		Profile: overlay
+			Detect-multiplier: 5
+			Detection timeout: 3000ms

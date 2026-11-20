@@ -1,0 +1,20 @@
+### after restart:
+ bgp router-id 10.255.0.11
+ bgp router-id 203.0.113.17
+  advertise ipv4 unicast route-map NO-DEFAULT
+  advertise ipv6 unicast route-map NO-DEFAULT
+### frr-reload.py --reload /etc/frr/frr.conf (run 1)
+rc=0
+ bgp router-id 203.0.113.17
+ bgp router-id 203.0.113.17
+  advertise ipv4 unicast
+  advertise ipv6 unicast
+### frr-reload.py --reload /etc/frr/frr.conf (run 2)
+rc=0
+ bgp router-id 10.255.0.11
+ bgp router-id 203.0.113.17
+  advertise ipv4 unicast route-map NO-DEFAULT
+  advertise ipv6 unicast route-map NO-DEFAULT
+### helper postmerge-check after reload
+FAIL bfd profile underlay missing
+rc=1

@@ -1,0 +1,26 @@
+bgpd=yes
+bfdd=yes
+FRRouting 10.7.1 (lima-sharpwire-lab) on Linux(6.12.111+deb13-cloud-arm64).
+### vtysh -C -f frr.conf.local.4a
+rc=0
+### vtysh -C -f frr.conf.local.5c
+line 47: % Unknown command[31]:   neighbor CORE6 deactivate
+Configuration file[/etc/frr/frr.conf] processing failure: 2
+rc=2
+### vtysh -C -f frr.conf.local.pve1
+line 99: % Unknown command[31]:   neighbor CORE6 deactivate
+Configuration file[/etc/frr/frr.conf] processing failure: 2
+rc=2
+### vtysh -C -f merged (PVE-rendered)
+line 77: % Unknown command[31]:   neighbor CORE6 deactivate
+Configuration file[/etc/frr/frr.conf] processing failure: 2
+rc=2
+### frr-reload.py --test merged
+rc=1
+===============
+no hostname lima-sharpwire-lab
+no log syslog informational
+### bad line test
+line 2: % Unknown command[28]:  neighbor UL peer-grop
+Configuration file[/etc/frr/frr.conf] processing failure: 2
+rc=2

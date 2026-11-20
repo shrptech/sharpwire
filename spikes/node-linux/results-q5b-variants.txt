@@ -1,0 +1,33 @@
+StartLimitIntervalUSec=3min
+StartLimitBurst=3
+## variant A plain bfd
+   bgp state=Established established=11 dropped=10
+ -- frr-reload --test lines to add/delete touching bgp/bfd:
+ -- no-op reload
+   bgp state=Established established=11 dropped=10
+ -- unrelated route-map change + reload
+   bgp state=Established established=11 dropped=10
+## variant B profiles
+   bgp state=Established established=12 dropped=11
+ -- frr-reload --test lines to add/delete touching bgp/bfd:
+    bfd
+    bfd
+    bfd
+    bfd
+    bfd
+ -- no-op reload
+   bgp state=Established established=12 dropped=11
+ -- unrelated route-map change + reload
+   bgp state=Established established=12 dropped=11
+## variant C no bfd on UL
+   bgp state=Established established=13 dropped=12
+ -- frr-reload --test lines to add/delete touching bgp/bfd:
+     no neighbor CORE bfd
+     no neighbor CORE6 bfd
+     neighbor VTEP bfd 5 300 300
+     neighbor CORE bfd 3 300 300
+     neighbor CORE6 bfd 3 300 300
+ -- no-op reload
+   bgp state=Established established=13 dropped=12
+ -- unrelated route-map change + reload
+   bgp state=Established established=13 dropped=12

@@ -1,0 +1,12 @@
+## original merge (doc config), after restart
+FAIL bfd profile underlay missing
+rc=1
+## after one frr-reload (as SDN apply does)
+FAIL router-id 10.255.0.11 not in default router bgp
+FAIL vrf_public advertise ipv4 without NO-DEFAULT
+FAIL vrf_public advertise ipv6 without NO-DEFAULT
+FAIL bfd profile underlay missing
+rc=1
+## json alternatives
+% Unknown command: show bgp router-id json
+{'default': '203.0.113.17', 'vrf_public': '203.0.113.17'}

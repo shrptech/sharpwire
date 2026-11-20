@@ -1,0 +1,8 @@
+sharpwire-node: snapshot run4 -> /var/lib/sharpwire/rollback/run4
+sharpwire-node: armed run4, fires in 600s
+warning: duplicate interface lo found
+error: eth0: cmd '/sbin/dhclient -pf /run/dhclient.eth0.pid -lf /var/lib/dhcp/dhclient.eth0.leases eth0' failed ([Errno 2] No such file or directory: '/sbin/dhclient')
+before hard kill: bond0.10@bond0   UP             fe80::148b:7ff:fe9a:cc68/64 
+after hard kill + boot: bond0.10@bond0   UP             2001:db8:100::11/64 fe80::dc79:c7ff:fe62:2c84/64 
+Nov 20 05:17:07 lima-sharpwire-lab sharpwire-node[617]: sharpwire-node: restored run4
+Nov 20 05:17:07 lima-sharpwire-lab sharpwire-node[639]: restored run4

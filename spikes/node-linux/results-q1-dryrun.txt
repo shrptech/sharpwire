@@ -1,0 +1,16 @@
+### ifreload -a -n with changed bond0.101 address (default verbosity)
+error: NetlinkListenerWithCache.addr_add_dry_run() got an unexpected keyword argument 'nodad'
+rc=0
+### ifreload -a -n -v | grep 101::
+info: DRY-RUN: bond0.101: netlink: ip addr del 2001:db8:101::11/64 dev bond0.101
+error: NetlinkListenerWithCache.addr_add_dry_run() got an unexpected keyword argument 'nodad'
+bond0.101@bond0  UP             2001:db8:101::11/64 fe80::148b:7ff:fe9a:cc68/64 
+### broken syntax: ifreload -a -n
+error: NetlinkListenerWithCache.addr_add_dry_run() got an unexpected keyword argument 'nodad'
+rc=0
+ifquery_rc=1
+### stanza bond0.102 removed + ifreload -a
+rc=0
+Device "bond0.102" does not exist.
+bond0.102@bond0  UP             2001:db8:102::11/64 fe80::148b:7ff:fe9a:cc68/64 
+clean_rc=0

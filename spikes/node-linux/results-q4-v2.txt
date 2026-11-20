@@ -1,0 +1,94 @@
+parse_rc=0
+reload1 rc=0
+69a70
+>  no bgp deterministic-med
+87d87
+<  use-underlays-nexthop-weight
+107a108
+>  no bgp deterministic-med
+121d121
+<  use-underlays-nexthop-weight
+reload2 rc=0
+  running config unchanged vs after-restart
+reload3 rc=0
+69a70
+>  no bgp deterministic-med
+87d87
+<  use-underlays-nexthop-weight
+107a108
+>  no bgp deterministic-med
+121d121
+<  use-underlays-nexthop-weight
+ bgp router-id 10.255.0.11
+ neighbor UL bfd
+ neighbor VTEP bfd
+ bgp router-id 10.255.0.11
+ neighbor CORE bfd
+ neighbor CORE6 bfd
+  advertise ipv4 unicast route-map NO-DEFAULT
+  advertise ipv6 unicast route-map NO-DEFAULT
+### remaining frr-reload --test noise:
+Lines To Delete
+===============
+no hostname lima-sharpwire-lab
+router bgp 65000
+ bgp deterministic-med
+exit
+router bgp 65000
+ no neighbor UL bfd
+exit
+router bgp 65000 vrf vrf_public
+ bgp deterministic-med
+exit
+router bgp 65000 vrf vrf_public
+ no neighbor CORE bfd
+exit
+router bgp 65000 vrf vrf_public
+ no neighbor CORE6 bfd
+exit
+
+Lines To Add
+============
+router bgp 65000
+ neighbor UL bfd 3 300 300
+exit
+router bgp 65000
+ neighbor VTEP bfd 5 300 300
+exit
+router bgp 65000 vrf vrf_public
+ neighbor CORE bfd 3 300 300
+exit
+router bgp 65000 vrf vrf_public
+ neighbor CORE6 bfd 3 300 300
+exit
+router bgp 65000 vrf vrf_public
+ address-family ipv4 unicast
+  neighbor CORE activate
+ exit
+exit
+frr version 10.6.1
+hostname pve1
+router bgp 65000
+ address-family ipv4 unicast
+ exit
+exit
+router bgp 65000
+ address-family ipv4 unicast
+  no neighbor UL activate
+ exit
+exit
+line vty
+exit
+### bfd peers
+	peer 2001:db8:102::1 vrf default
+			Detect-multiplier: 3
+			Receive interval: 300ms
+			Detect-multiplier: 3
+			Receive interval: 1000ms
+	peer 10.250.0.2 vrf vrf_public
+			Detect-multiplier: 3
+			Receive interval: 300ms
+			Detect-multiplier: 3
+			Receive interval: 1000ms
+	peer 2001:db8:250::2 vrf vrf_public
+			Detect-multiplier: 3

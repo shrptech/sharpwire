@@ -1,0 +1,37 @@
+### case: address notanaddress
+-- ifreload -a -n:
+rc=0
+-- ifup -a -s (syntax check):
+warning: bogus0: address: invalid value "notanaddress": valid attribute values: ['<ipv4/prefixlen>', '<ipv6/prefixlen>']
+rc=1
+-- ifreload -a -s:
+warning: bogus0: address: invalid value "notanaddress": valid attribute values: ['<ipv4/prefixlen>', '<ipv6/prefixlen>']
+rc=1
+### case: frobnicate 1
+-- ifreload -a -n:
+rc=0
+-- ifup -a -s (syntax check):
+rc=0
+-- ifreload -a -s:
+warning: bogus0: interface not recognized - please check interface configuration
+rc=0
+### case: vrf vrf_nonexistent
+-- ifreload -a -n:
+warning: bogus0: device not found - please check your configuration
+rc=0
+-- ifup -a -s (syntax check):
+rc=0
+-- ifreload -a -s:
+warning: bogus0: interface not recognized - please check interface configuration
+rc=0
+### case: bond-mode 802.3adx
+-- ifreload -a -n:
+warning: bogus0: invalid bond-mode value 802.3adx
+rc=0
+-- ifup -a -s (syntax check):
+warning: bogus0: bond-mode: invalid value "802.3adx": valid attribute values: ['0', 'balance-rr', '1', 'active-backup', '2', 'balance-xor', '3', 'broadcast', '4', '802.3ad', '5', 'balance-tlb', '6', 'balance-alb']
+rc=1
+-- ifreload -a -s:
+warning: bogus0: bond-mode: invalid value "802.3adx": valid attribute values: ['0', 'balance-rr', '1', 'active-backup', '2', 'balance-xor', '3', 'broadcast', '4', '802.3ad', '5', 'balance-tlb', '6', 'balance-alb']
+rc=1
+clean_rc=0

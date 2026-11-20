@@ -1,0 +1,54 @@
+# /etc/network/interfaces (pve1) -- network doc Step 2, adapted for the lab VM.
+# eno1/eno2 are veths whose peers sit in netns "leaf" (bonded 802.3ad there),
+# created by lab-nics.service before networking.service. The VM's real NIC
+# (eth0/enp0s1) is NOT in this file.
+auto lo
+iface lo inet loopback
+
+auto eno1
+iface eno1 inet manual
+    mtu 9216
+
+auto eno2
+iface eno2 inet manual
+    mtu 9216
+
+# LACP to the CRS317 MLAG pair
+auto bond0
+iface bond0 inet manual
+    bond-slaves eno1 eno2
+    bond-mode 802.3ad
+    bond-xmit-hash-policy layer3+4
+    bond-lacp-rate fast
+    bond-miimon 100
+    mtu 9216
+
+# VLAN 10: mgmt, host traffic only
+auto bond0.10
+iface bond0.10 inet6 static
+    address 2001:db8:100::11/64
+    gateway 2001:db8:100::1
+    accept_ra 0
+    mtu 1500
+
+# VLAN 101: shared underlay, core A
+auto bond0.101
+iface bond0.101 inet6 static
+    address 2001:db8:101::11/64
+    accept_ra 0
+    mtu 9216
+
+# VLAN 102: shared underlay, core B
+auto bond0.102
+iface bond0.102 inet6 static
+    address 2001:db8:102::11/64
+    accept_ra 0
+    mtu 9216
+
+# VTEP / BGP source
+auto dummy0
+iface dummy0 inet6 static
+    link-type dummy
+    address 2001:db8:ffff::11/128
+
+source /etc/network/interfaces.d/*

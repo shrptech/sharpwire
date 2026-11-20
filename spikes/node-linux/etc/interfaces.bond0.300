@@ -1,0 +1,8 @@
+
+auto bond0.300
+iface bond0.300
+    vrf vrf_public
+    address 10.250.0.11/24
+    address 2001:db8:250::11/64
+    accept_ra 0
+    mtu 9216
