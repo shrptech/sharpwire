@@ -2,71 +2,93 @@
 
 Nov 20, 2026 · Draft
 
-NetBox is the single source of truth, and config is strictly declarative: anything in a managed scope that isn't in NetBox is removed. Each driver defines its managed scope exactly (see [Drivers](04-drivers.md)). Anything outside it is never read for diffing and never touched.
+NetBox is the single source of truth. Every value that ends up on a device comes from one of two places:
 
-## Where intent lives
+- **a NetBox object** (mostly core models: devices, interfaces, VLANs, prefixes, IPs, ASNs, plus a few custom fields and two plugin models); or
+- **a named rule** in this doc: a fixed shape or constant in code, such as a chain name or the LACP mode.
 
-| Config area | Where it lives |
+There is no third place. If a value isn't in the mapping or the rules below, it doesn't belong on a device. Hand-configured parts of v1 (leafs, corosync link1, bootstraps) still follow the same rules, so the read-only drivers can diff them.
+
+The intent builder reads NetBox via GraphQL into the vendor-neutral model in `app/intent/models.py`. The driver is chosen by the device's NetBox platform (`routeros`, `proxmox`). Devices are managed when their `sharpwire_managed` custom field is set.
+
+## NetBox mapping
+
+| Intent | NetBox |
 | --- | --- |
-| Devices, platforms, roles, interfaces, bonds, VLANs, IPs, prefixes, cabling | NetBox core |
-| Proxmox nodes | NetBox core devices, assigned to a NetBox virtualization cluster |
-| VRFs (`vrf_public`, phase 2: `cNN`, `outside`) | NetBox core VRF |
-| EVPN: L2 VNIs (one per VNet) and L3VNIs (one per zone), route targets | NetBox core L2VPN (`vxlan-evpn`) and route-target models |
-| ASNs (core, node underlay, public handoff, overlay 65000) | NetBox core ASN model, with ranges for allocation |
-| SDN zones and VNets | sharpwire plugin: **Zone** (kind `public` or `customer`, VRF, L3VNI, MTU, IPAM) and **VNet** (zone, L2VNI, subnets as NetBox prefixes in the zone's VRF with a gateway IP, and a `status` of `planned` or `active` that sharpwire sets once the VNet is applied). No NetBox VLAN object is created for a VNet |
-| Cluster-level PVE firewall: `enable` in v1; **(later)** cluster rules and host rules | sharpwire plugin |
-| BGP sessions and peer groups, BFD profiles, including the upstream ISP sessions and the aggregates announced to them | sharpwire plugin |
-| Route policy: prefix lists, route maps, RouterOS filter chains | sharpwire plugin |
-| Firewall: address lists, ordered rule sets | sharpwire plugin |
-| NAT rules **(phase 2)** | sharpwire plugin |
-| Customers **(phase 2)**: NN, tenant, NAT IPv4, IPv6 /56, zone | sharpwire plugin **Customer**, linked to a NetBox tenant |
-| Corosync links, cluster hosts, migration network | sharpwire plugin, on the NetBox cluster |
-| System services: users and keys, NTP, DNS, syslog, SNMP | Plugin models, with defaults in config contexts by site and role |
-| Redundancy groups (core pair, leaf pair, PVE cluster, phase 2: gateway pair) | sharpwire plugin |
-| Managed flag, protected objects | Plugin custom fields |
+| Overlay ASN, handoff ASN | `ipam.ASN` tagged `overlay` / `public-handoff` |
+| Mgmt VLAN | `ipam.VLAN` with role `mgmt` |
+| Underlay VLANs and their prefixes | `ipam.VLAN` with role `underlay`, and the `ipam.Prefix` assigned to each |
+| Public handoff VLAN and its prefixes | `ipam.VLAN` with role `public-handoff`, and its IPv4 and IPv6 prefixes |
+| VTEP loopback range | `ipam.Prefix` with role `vtep` |
+| Public ranges | `ipam.Prefix` with role `public`, plus custom field `max_subnet_length` (subnets from the prefix length up to this are accepted) |
+| Device kind | Device role `core`, `leaf` or `pve-node`; nodes also belong to the NetBox virtualization cluster |
+| Device ASN | Device custom field `asn` (an object field pointing at an `ipam.ASN`). NetBox assigns ASNs to sites, not devices, so the custom field carries the link |
+| Router-id | Device custom field `router_id` |
+| Physical port: name, MTU | `dcim.Interface` name and `mtu`, plus custom field `l2mtu` |
+| Bond (LAG) | `dcim.Interface` of type LAG; members are the interfaces whose `lag` is set to it; `mtu`; `mode=tagged` with `tagged_vlans` |
+| Bond peer | The device at the far end of the members' cables |
+| MLAG id | Interface custom field `mlag_id`, on MLAG bonds only |
+| Leaf bridge, mgmt interface | `dcim.Interface` of type bridge; a virtual interface with the bridge as parent and the mgmt VLAN as untagged VLAN |
+| VLAN interface (core `vlan101`, node `bond0.101`) | Virtual `dcim.Interface` with its VLAN as untagged VLAN, `mtu`, and the IP addresses assigned to it |
+| Addresses | `ipam.IPAddress` assigned to the interface, with its mask |
+| Node loopback | The /128 `ipam.IPAddress` on the node's `dummy0` |
+| SDN zone | Plugin model **Zone**: kind `public`, VRF (`ipam.VRF`), L3VNI, MTU |
+| VNet | Plugin model **VNet**: zone, VNI (also its tag and name `vnetNNN`), subnets (`ipam.Prefix` in the zone's VRF, gateway as an anycast `ipam.IPAddress`), and `status` (`planned`/`active`, written by sharpwire) |
+| Cluster firewall | Custom field `firewall_enabled` on the NetBox cluster (v1 checks only this) |
 
-sharpstack also writes to NetBox. [sharpstack integration](09-sharpstack-integration.md#ownership) lists which objects each system owns. Event rules fire only on sharpwire's objects.
+sharpstack also writes to NetBox ([sharpstack integration](09-sharpstack-integration.md#ownership)). Event rules fire only on objects sharpwire uses, and never on sharpwire's own writes.
 
-The driver is selected from the NetBox platform field (`routeros`, `proxmox`, `vyos`). The intent builder pulls from NetBox via GraphQL into a vendor-neutral model (Pydantic). Every plan records the NetBox changelog position it was built from.
+The two plugin models, the custom fields and the roles and tags above are all the plugin adds in v1. Everything else is NetBox core.
 
-## Derived, not stored
+## Rules
 
-Anything the network doc defines by a numbering rule is computed by the intent builder, never stored. A person can't set it to an inconsistent value, and the validator checks the inputs instead.
+Fixed shapes and constants in code. Each has one home in code, named after the rule (for RouterOS, `app/drivers/routeros/render.py`). Changing a rule means changing this table and that code together.
 
-| Derived value | Rule | Source |
-| --- | --- | --- |
-| Node underlay ASN | from the node's ASN assignment, unique per node | NetBox ASN |
-| BGP router-id | 10.255.0.<host part of the node's loopback> | network doc, Step 4 |
-| RouterOS per-peer filter chain | `ul-in-<device>` | network doc, A.2 |
-| `UL-OUT` and `network` lines in `frr.conf.local` | the node's own loopback /128 | network doc, Step 4 |
-| EVPN controller peer list | every managed VTEP loopback (nodes, plus gateways in phase 2) | network doc, Step 5a |
-| `/etc/hosts` and corosync `ring0_addr` | node mgmt addresses on VLAN 10 | network doc, Step 3 |
-| Corosync `ring1_addr` and link priorities | the node's VTEP loopback; link0 high priority, link1 low | network doc, Step 3 |
-| **(phase 2)** zone ID, VRF, L3VNI, VNet ID, L2VNI | `cNN`, `vrf_cNN`, `100NN`, `cNNnXX`, `1NNXX` | network doc, Step 5b |
-| **(phase 2)** VyOS VRF table, VXLAN, bridge, veth names, transfer nets, NAT rule ID | `10NN`, `100NN`, `veth10NN`/`veth10NNo`, `100.64.0.(2·NN−2)/31`, `fd00:64:NN::/127`, `10NN` | network doc, B.5 |
-| **(phase 2)** route targets | auto `65000:<L3VNI>` | network doc, Step 6 |
+### RouterOS
+
+| Rule | Value |
+| --- | --- |
+| Bonds | `mode=802.3ad`, `lacp-rate=1sec`; core bonds also `transmit-hash-policy=layer-3-and-4` |
+| IPv6 addresses | `advertise=no` |
+| BGP instance | name `core`, with the device's ASN and router-id |
+| Underlay, per node | chain `ul-in-<node>`: accept the node's loopback, reject. Connection `ul-<node>`: eBGP over IPv6 from the core's address on its underlay VLAN to the node's address on the same VLAN, `use-bfd=yes`, `nexthop-choice=propagate`, in `ul-in-<node>`, out `ul-out` |
+| `ul-out` | accept /128s inside the VTEP range, reject |
+| Public handoff | listening connections `pub4` and `pub6` with remote address set to the handoff prefixes and remote AS the handoff ASN, `use-bfd=yes`, `output.default-originate=always`, in `pub-in`, out `default-out` |
+| `pub-in` | accept each public range from its length up to `max_subnet_length`, reject |
+| `default-out` | accept `0.0.0.0/0` and `::/0`, reject |
+| Filter rule comments | `sharpwire:<chain>:<rule name>` |
+| BFD | 300 ms × 3 (FRR's defaults, used on the nodes); one `/routing/bfd/configuration` row covering the interfaces with BFD-enabled sessions |
+| Leaf bridge | `vlan-filtering=yes`; MLAG peer port is the LAG cabled to the other leaf; bridge VLANs from the LAGs' tagged VLANs; the bridge itself is tagged where the leaf has a VLAN interface |
+| Leaf edge bonds | `frame-types=admit-only-vlan-tagged` on MLAG bonds |
+| Leaf STP and ICCP | constants from MikroTik's MLAG documentation for the pinned RouterOS version, written down when the leafs are first configured |
+
+### Proxmox
+
+| Rule | Value |
+| --- | --- |
+| Node bond | `bond-mode 802.3ad`, `bond-xmit-hash-policy layer3+4`, `bond-lacp-rate fast`, `bond-miimon 100` |
+| Static interfaces | `accept_ra 0`; no gateway on underlay VLANs |
+| Mgmt VLAN | `egress-qos-map 0:6` (corosync priority) |
+| `dummy0` | `hwaddress 02:00:` followed by the router-id's four bytes, which is how PVE derives the router-id (network doc Step 2) |
+| sysctl | the four lines in network doc Step 2 |
+| `frr.conf.local` | network doc Steps 4a and 5c, filled from the node's ASN, loopback, underlay peers and the public ranges, following the merge rules in [Drivers](04-drivers.md#node-targets-host-files) |
+| `/etc/hosts` | every node's mgmt address and DNS name |
+| SDN controller | `evpnctl`, ASN = overlay ASN, peers = every managed node's loopback |
+| Zone `public` | `advertise-subnets 0`, `ipam pve`, no exit nodes, no SNAT |
+| Corosync | link0 on the mgmt address, link1 on the loopback; `knet_link_priority` 20 on link0 and 10 on link1 |
+| `datacenter.cfg` | `migration: secure,network=<mgmt prefix>` |
 
 ## Allocation
 
-**v1:** an admin creates VNets and subnets in NetBox directly. sharpstack doesn't create them. Validation rejects collisions and anything outside the ranges below.
+In v1 an admin creates VNets and subnets in NetBox by hand. Validation rejects collisions and anything outside the public ranges. Plugin allocation comes [later](later.md#plugin-allocation).
 
-**(later)** The plugin owns allocation, so sharpstack never picks numbers itself and two requests can't race:
+## Plan warnings
 
-- **Phase 1.** Public VNet tags come from 200–999, and each VNet is named `vnetNNN` after its tag. That range doesn't collide with the VPC L2VNIs (`1NNXX`) or L3VNIs (`100NN`, 20000). Public subnets come from the public aggregates (`198.51.100.0/24` and `2001:db8:70::/48`).
-- **Phase 2.** Customer NN (1–99), the NAT IPv4 from `203.0.113.0/24`, and the IPv6 /56 from `2001:db8:60::/48`.
+Some changes are legal but risky, so the plan shows them as **warnings** that the approver must read before approving. There is no separate override step in v1, because every plan is already approved by a human ([later](later.md#overrides-and-roles)). Plans that would break the management path are a different matter: they're rejected outright by the [hard guards](03-pipeline-and-validation.md#hard-guards).
 
-Allocation is a plugin API call that creates the objects in one NetBox transaction.
-
-## Protected objects
-
-Protected objects can never change in an automated plan. Changing one needs an explicit override in the UI by an admin, recorded in the audit log. The mgmt-path values covered by the [hard guard](03-pipeline-and-validation.md#hard-guards) can't be changed at all, not even with an override.
-
-| Area | Protected |
-| --- | --- |
-| Leafs | MLAG config, the peer-link bond and its membership in every VLAN, VLAN 10 |
-| Cores | VLAN 10 interface, VRRP for the mgmt gateway, the BGP instance (ASN, router-id), upstream sessions |
-| Proxmox nodes | Other attributes of `bond0` and `bond0.10` (MTU, LACP options, `egress-qos-map`), the `dummy0` address, the node's underlay ASN and router-id. The mgmt address, gateway, VLAN, bond members and default route fall under the hard guard instead |
-| Proxmox cluster | Every corosync link, `config_version` handling, and the cluster name |
-| Gateways **(phase 2)** | VLAN 101 and 102 interfaces, `dum0`, the underlay ASN |
-
-The pipeline also has a hard guard that is separate from protected objects: it never removes or changes anything the controller's own management session to that target depends on.
+Warnings are raised for changes to:
+- the leaf MLAG config, or the peer-link's VLANs;
+- a core's mgmt VLAN interface, or its BGP instance (ASN, router-id);
+- a node's `bond0`/`bond0.10` attributes outside the hard guard (MTU, bond options, `egress-qos-map`);
+- a node's `dummy0`, ASN or router-id;
+- any corosync setting.

@@ -6,7 +6,7 @@ Guidance for anyone, human or agent, working in this repository.
 
 sharpwire keeps the network matching the intent in NetBox: MikroTik cores and leafs, Proxmox VE (SDN, node files, cluster files) and, in phase 2, the VyOS gateways. It renders full declarative config, diffs it against live state, and applies human-approved plans with a rollback armed on the target.
 
-**The design is in [`docs/`](docs/README.md). Read it before changing behaviour.** Start with the README's "v1 scope (MVP)" table: anything marked **(later)** or **(phase 2)** is designed but must not be built yet. If code and the docs disagree, fix whichever is wrong in the same change. The network design ([`docs/network/`](docs/network/proxmox-evpn-ipv6-underlay.md)) wins over everything else.
+**The design is in [`docs/`](docs/README.md). Read it before changing behaviour.** Start with the README's "v1 in one table" and "Decisions". Anything in [`docs/later.md`](docs/later.md) is designed but must not be built yet. If code and the docs disagree, fix whichever is wrong in the same change. The network design ([`docs/network/`](docs/network/proxmox-evpn-ipv6-underlay.md)) wins over everything else.
 
 sharpwire is a sibling of sharpstack (`../sharpstack`) and follows its conventions unless this file says otherwise. When in doubt, read sharpstack's `AGENTS.md` for the rule and copy it.
 
@@ -33,6 +33,7 @@ uv run pre-commit install             # once per clone
 | `app/schemas/` | Pydantic wire shapes |
 | `app/services/` | Everything else that isn't a router, a job or a driver. Imports neither `fastapi.Depends`/`Request` nor `app.api` |
 | `app/jobs/` | The Postgres job queue (`SELECT … FOR UPDATE SKIP LOCKED`) and job bodies. No Celery, no Redis |
+| `app/intent/` | The vendor-neutral intent model (Pydantic) that drivers render from, with the cross-target rules |
 | `app/drivers/` | One package per target type (`routeros`, `proxmox`, later `vyos`): render, fetch live state, apply, health checks |
 | `app/enums.py` | Every shared value list, as a `Literal`. Imports nothing from the app |
 | `alembic/` | Migrations |
@@ -40,10 +41,11 @@ uv run pre-commit install             # once per clone
 
 Still to come, per the build plan: the NetBox plugin (its own package, built against NetBox 4.7) and the Proxmox node bootstrap package (the `sharpwire-node` helper, its sudoers rule and `sharpwire-restore.service`).
 
-Import direction: `api → jobs, services, drivers, schemas, models`; `jobs → services, drivers, schemas, models`; `drivers → schemas`, never `api` or `jobs`.
+Import direction: `api → jobs, services, drivers, schemas, models`; `jobs → services, drivers, schemas, models`; `drivers → intent, schemas`, never `api` or `jobs`. `intent` imports nothing from the app.
 
 ## Rules specific to sharpwire
 
+- **NetBox holds the full state.** Every value that reaches a device comes from the intent model (built from NetBox) or a named rule listed in [`docs/02-intent-model.md`](docs/02-intent-model.md#rules). No defaults for network values in code: a new constant is a new rule in that table, added in the same change.
 - **Never touch anything outside a driver's managed scope.** Each driver defines what it reads, diffs and may change ([`docs/04-drivers.md`](docs/04-drivers.md)). Anything outside it is never read for the diff and never written.
 - **Every write goes through a plan.** No code path changes a target without an approved, non-stale plan, the target's lock, an armed rollback (where the docs require one) and health checks.
 - **The hard guards have no override** ([`docs/03-pipeline-and-validation.md`](docs/03-pipeline-and-validation.md#hard-guards)). Never add one.

@@ -41,7 +41,7 @@ All host-side addressing is IPv6. IPv4 exists only inside the tenant VRF. The ex
 | Public-VRF handoff ASN | 4200000100 | same on all nodes | Identical AS paths make ECMP easy on the cores |
 | Core ASNs | 4200000001 / 4200000002 |  | One per core |
 | EVPN overlay ASN | 65000 | same on all nodes and gateways | The FRR process ASN; iBGP |
-| BGP router-id | 32-bit | 10.255.0.11 | Set explicitly; there's no IPv4 to derive it from |
+| BGP router-id | 32-bit | 10.255.0.11 | Set through the MAC of `dummy0` (Step 2); there's no IPv4 to derive it from |
 | Public zone subnets | 198.51.100.0/24 + 2001:db8:70::/48 | anycast gateway on every node | Routed, no NAT; L3VNI 20000 |
 | Customer NAT zones | private IPv4 per customer + 2001:db8:60::/48 | anycast gateway on every node | /56 and one NAT IPv4 from 203.0.113.0/24 per customer; L3VNI 100NN (Step 5b) |
 
@@ -114,12 +114,15 @@ iface bond0.102 inet6 static
 auto dummy0
 iface dummy0 inet6 static
     link-type dummy
+    hwaddress 02:00:0a:ff:00:0b
     address 2001:db8:ffff::11/128
 
 source /etc/network/interfaces.d/*
 ```
 
 pve2 uses `::12` in each prefix, pve3 uses `::13`, and so on. No default route or gateway goes on VLAN 101 or 102.
+
+The `hwaddress` on `dummy0` sets the node's BGP router-id. With an IPv6 underlay, PVE's SDN derives the router-id from the last four bytes of the MAC of the interface that holds the node's VTEP address, and a dummy interface otherwise gets a random MAC. Use `02:00:` followed by the router-id's four bytes: `02:00:0a:ff:00:0b` gives 10.255.0.11. Don't also set `bgp router-id` in `frr.conf.local` (Step 4a).
 
 The layer3+4 hash spreads VXLAN well, because the outer UDP source port carries per-flow entropy. If the leaf pair isn't running MLAG, use `bond-mode active-backup` instead. You keep the same VLAN layout, but all traffic uses one link at a time.
 
@@ -180,19 +183,6 @@ FRR allows one BGP instance per VRF, and the EVPN controller already owns `route
 
 ```
 ! /etc/frr/frr.conf.local (pve1)
-bfd
- profile underlay
-  receive-interval 300
-  transmit-interval 300
-  detect-multiplier 3
- !
- profile overlay
-  receive-interval 300
-  transmit-interval 300
-  detect-multiplier 5
- !
-exit
-!
 ipv6 prefix-list UL-IN seq 10 permit 2001:db8:ffff::/64 ge 128
 ipv6 prefix-list UL-OUT seq 10 permit 2001:db8:ffff::11/128
 !
@@ -206,17 +196,15 @@ route-map UL-OUT permit 10
 exit
 !
 router bgp 65000
- bgp router-id 10.255.0.11
  bgp bestpath as-path multipath-relax
  neighbor UL peer-group
  neighbor UL remote-as external
  neighbor UL local-as 4200000011 no-prepend replace-as
  neighbor UL bfd
- neighbor UL bfd profile underlay
  neighbor 2001:db8:101::1 peer-group UL
  neighbor 2001:db8:102::1 peer-group UL
  neighbor VTEP update-source dummy0
- neighbor VTEP bfd profile overlay
+ neighbor VTEP bfd
  !
  address-family ipv4 unicast
   no neighbor UL activate
@@ -232,13 +220,13 @@ router bgp 65000
 exit
 ```
 
-Per node, change the router-id, the `local-as`, the `network` line and the `UL-OUT` prefix:
+Per node, change the `local-as`, the `network` line and the `UL-OUT` prefix. The router-id comes from `dummy0`'s `hwaddress` (Step 2):
 
-| Node | router-id | local-as | Loopback |
+| Node | router-id (`dummy0` MAC) | local-as | Loopback |
 | --- | --- | --- | --- |
-| pve1 | 10.255.0.11 | 4200000011 | 2001:db8:ffff::11/128 |
-| pve2 | 10.255.0.12 | 4200000012 | 2001:db8:ffff::12/128 |
-| pve3 | 10.255.0.13 | 4200000013 | 2001:db8:ffff::13/128 |
+| pve1 | 10.255.0.11 (`02:00:0a:ff:00:0b`) | 4200000011 | 2001:db8:ffff::11/128 |
+| pve2 | 10.255.0.12 (`02:00:0a:ff:00:0c`) | 4200000012 | 2001:db8:ffff::12/128 |
+| pve3 | 10.255.0.13 (`02:00:0a:ff:00:0d`) | 4200000013 | 2001:db8:ffff::13/128 |
 
 These lines do the following:
 
@@ -246,25 +234,36 @@ These lines do the following:
 - **`prefer-global`** makes FRR install the global next hop the core passed on (the other node's VLAN address). Without it, FRR may install the core's link-local next hop instead, and traffic hairpins through the core again.
 - **`UL-OUT`** advertises only the node's own loopback, so a node never becomes transit.
 - **`multipath-relax`** is needed because the two paths to another node carry different core ASNs. Without it there's no ECMP across VLAN 101 and 102.
-- **`update-source dummy0`** sources the EVPN sessions from the loopback, so peers see the address they expect.
+- **`update-source dummy0`** sources the EVPN sessions from the loopback, so peers see the address they expect. SDN doesn't generate it for a peers-only EVPN controller.
 
-After SDN Apply, check the merge with `vtysh -c 'show run'`. Make sure your router-id has replaced the generated one, and that the `VTEP` peer-group name matches.
+**What SDN's merge does to this file.** SDN merges `frr.conf.local` into the generated `frr.conf` on every apply, and every apply reloads FRR with `frr-reload.py` on every node. The merge isn't a plain append, and it has three consequences:
+- **Top-level `bfd` blocks, `ip route` and `ip nht` lines are silently dropped.** That's why this file sets no BFD profiles and uses FRR's default timers (Step 4c).
+- **Lines in a `router bgp` block are appended after the generated ones.** A setting SDN also generates, such as `bgp router-id` or an `advertise` line in Step 5c, then appears twice, and the two copies swap on every reload, resetting every BGP session each time. Never repeat a generated setting here.
+- **Route-map entries are renumbered** 1, 2, 3 …, so `UL-IN permit 10` shows up as `permit 1` in `show run`.
+
+After SDN Apply, check the merge with `vtysh -c 'show run'`: the router-id is the one encoded in `dummy0`'s MAC, `update-source dummy0` is on the `VTEP` peer group, and there is exactly one `bgp router-id` line per router. Run SDN Apply a second time and check that nothing changed and no BGP session reset.
+
+These findings come from reading PVE 9's source and replaying its merge on FRR 10.7 (`spikes/pve-sdn/`, `spikes/node-linux/` in the sharpwire repo).
 
 ### 4b. Third-party next hop
 
-The design relies on the cores passing the original node's VLAN address on as the next hop. On RouterOS 7 this is the BGP connection's `nexthop-choice`:
+The design relies on the cores passing the original node's next hop on, instead of their own. On RouterOS 7 this is the BGP connection's `nexthop-choice`, and it must be **`propagate`** on the node-facing connections. With `default`, RouterOS 7.25 sends the core itself as the next hop. In the spike, the other nodes received `2001:db8:101::1`, so all node-to-node traffic would hairpin through the core (`spikes/routeros/` in the sharpwire repo).
 
-- Start with `default`. This is RFC 4271 behaviour: a next hop on the peer's subnet is kept, anything else becomes the core itself.
-- Check on pve1 with `ip -6 route show 2001:db8:ffff::12`. You want two next hops: `via 2001:db8:101::12 dev bond0.101` and `via 2001:db8:102::12 dev bond0.102`.
-- If you see `via 2001:db8:101::1` instead, set `nexthop-choice=propagate` on the node-facing connections. Then confirm that the gateway /128s, learned from elsewhere, still arrive with a next hop the node can reach.
+- With `propagate`, a node receives both the originating node's global VLAN address and its link-local address as next hops.
+- Check on pve1 with `ip -6 route show 2001:db8:ffff::12`. You want one next hop on each underlay VLAN, and each must be **pve2's** address on that VLAN: global (`via 2001:db8:101::12 dev bond0.101`) or link-local (`via fe80::… dev bond0.101`). Either is a direct path. A core address (`2001:db8:101::1`, or the core's link-local) means the next hop wasn't passed on.
+- Confirm that the gateway /128s (phase 2), learned from elsewhere, still arrive with a next hop the node can reach.
 
 The gateway VTEP /128s correctly keep the core as their next hop. North-south traffic is supposed to go through the core.
 
 ### 4c. BFD
 
-The `underlay` profile (300 ms × 3, about 0.9 s) covers the case you care about: a core dies while the leafs stay up. That core's sessions drop, its copies of every /128 are withdrawn, and traffic continues on the other VLAN's shortcut. If a node dies, the cores' BFD to that node withdraws its loopback for everyone within the same window.
+BFD uses FRR's default timers, 300 ms × 3 (about 0.9 s), on both the underlay and the overlay. Named BFD profiles can't be used, because SDN's merge drops them (Step 4a).
 
-The `overlay` profile (300 ms × 5) runs multihop BFD on the EVPN sessions. It's deliberately slower than the underlay, so a core failure never tears down EVPN.
+On the underlay, that covers the case you care about: a core dies while the leafs stay up. That core's sessions drop, its copies of every /128 are withdrawn, and traffic continues on the other VLAN's shortcut. If a node dies, the cores' BFD to that node withdraws its loopback for everyone within the same window.
+
+On the overlay, `neighbor VTEP bfd` runs multihop BFD on the EVPN sessions with the same timers. A slower overlay (×5) would guarantee a core failure never tears down EVPN while the underlay reconverges; with ×3 the two windows are equal. Test core failure in the lab (Step 7, failover test 2). If EVPN sessions flap, drop BFD from the overlay and rely on BGP timers there.
+
+RouterOS 7.25 doesn't establish a BGP session with `use-bfd=yes` until BFD is up, so the cores' `/routing bfd configuration` must cover every interface with BFD-enabled connections.
 
 Don't go below 300 ms on the underlay. A bond member that stays link-up but stops forwarding takes LACP about 3 s to remove, and tighter timers would drop both VLAN sessions at once. Set RouterOS BFD to 300 ms or lower, because the session negotiates to the slower side.
 
@@ -359,7 +358,7 @@ The public zone is a second EVPN zone with its own VRF. Every node peers eBGP fr
 evpn: public
     controller evpnctl
     vrf-vxlan 20000
-    advertise-subnets 1
+    advertise-subnets 0
     mtu 1500
     ipam pve
 
@@ -426,12 +425,10 @@ router bgp 65000 vrf vrf_public
  neighbor CORE remote-as external
  neighbor CORE local-as 4200000100 no-prepend replace-as
  neighbor CORE bfd
- neighbor CORE bfd profile underlay
  neighbor CORE6 peer-group
  neighbor CORE6 remote-as external
  neighbor CORE6 local-as 4200000100 no-prepend replace-as
  neighbor CORE6 bfd
- neighbor CORE6 bfd profile underlay
  neighbor 10.250.0.1 peer-group CORE
  neighbor 10.250.0.2 peer-group CORE
  neighbor 2001:db8:250::1 peer-group CORE6
@@ -440,7 +437,7 @@ router bgp 65000 vrf vrf_public
  address-family ipv4 unicast
   redistribute connected
   neighbor CORE activate
-  neighbor CORE6 deactivate
+  no neighbor CORE6 activate
   neighbor CORE route-map DEFAULT-ONLY in
   neighbor CORE route-map PUB-OUT out
   maximum-paths 2
@@ -465,7 +462,7 @@ These lines do the following:
 
 - **`PUB-OUT` on the way out.** The VRF also holds /32 and /128 host routes for VMs on other nodes, imported from EVPN. Without this filter, a node would advertise those to the cores and attract traffic for VMs it doesn't host. The `le` lengths cover the VNet subnets only; tighten them to your real subnet sizes.
 - **`DEFAULT-ONLY` on the way in.** Each node accepts only the two defaults from the cores, and nothing else enters the public VRF.
-- **`NO-DEFAULT` on the EVPN export.** Every node already has its own default from the cores, so they must not send it to each other as type-5. Merge this with whatever `advertise` lines SDN generates for the VRF, and check `vtysh -c 'show run'` after Apply.
+- **`NO-DEFAULT` on the EVPN export.** Every node already has its own default from the cores, so they must not send it to each other as type-5. The zone uses `advertise-subnets 0`, so SDN generates no `advertise` lines of its own and these two are the only ones. With `advertise-subnets 1`, SDN's plain `advertise` lines and these would swap on every reload (Step 4a), and every other apply would leak the default. Check `vtysh -c 'show run'` after Apply, twice.
 - **Shared handoff ASN 4200000100.** The cores see an identical AS path from every node, so they can ECMP the public subnets across all nodes. Nodes never need each other's routes from the cores, so the shared ASN causes no loop drops.
 
 Return traffic can arrive at any node advertising the subnet. If the VM lives elsewhere, the node forwards the packet over VXLAN using the EVPN host route. That costs one extra hop at leaf line rate and needs no config.
@@ -496,7 +493,7 @@ Proxmox works only if the far side provides the following. Use this as the accep
 - **Underlay.**
   - Core A has `vlan101` with `2001:db8:101::1/64`, and core B has `vlan102` with `2001:db8:102::1/64`, both MTU 9216.
   - One eBGP connection per node to its global VLAN address, IPv6 unicast, BFD at 300 ms × 3, with a distinct remote ASN per node.
-  - `nexthop-choice` kept so node /128s go out with the originating node's VLAN address as next hop (Step 4b). Verify this from a node.
+  - `nexthop-choice=propagate`, so node /128s go out with the originating node's next hop instead of the core's (Step 4b). Verify this from a node.
   - Advertise only node and gateway VTEP /128s inside `2001:db8:ffff::/64`, with no default. Accept from each node only its own /128.
 - **Public handoff (VLAN 300).**
   - Both cores on `vlan300` (core A `.1`/`::1`, core B `.2`/`::2`).
@@ -539,9 +536,9 @@ Work bottom-up. Each check assumes the one before it passed.
 
 | # | Check | Command | Expected |
 | --- | --- | --- | --- |
-| 1 | Host table is clean | `ip -6 route; ip -4 route` | IPv6 default via mgmt only; other nodes' /128s via their own VLAN 101/102 addresses; gateway /128s via the cores or VyOS's VLAN address; IPv4 table empty apart from local |
+| 1 | Host table is clean | `ip -6 route; ip -4 route` | IPv6 default via mgmt only; other nodes' /128s via their own VLAN 101/102 addresses (global or link-local); gateway /128s via the cores or VyOS's VLAN address; IPv4 table empty apart from local |
 | 2 | Underlay sessions | `vtysh -c 'show bgp ipv6 unicast summary'` | 2 sessions (core A on VLAN 101, core B on VLAN 102) Established |
-| 3 | Third-party next hop | `ip -6 route show 2001:db8:ffff::12` | Two next hops, `2001:db8:101::12` and `2001:db8:102::12`, never `::1` |
+| 3 | Third-party next hop | `ip -6 route show 2001:db8:ffff::12` | One next hop per underlay VLAN, each pve2's own address there (`2001:db8:101::12`/`2001:db8:102::12` or pve2's link-local), never a core's |
 | 4 | BFD | `vtysh -c 'show bfd peers brief'` | Core underlay sessions, VLAN 300 sessions and all overlay peers up |
 | 5 | Underlay MTU | `ping -6 -M do -s 9100 -I 2001:db8:ffff::11 2001:db8:ffff::12` | Replies, no fragmentation errors; repeat towards a gateway VTEP |
 | 6 | Overlay sessions | `vtysh -c 'show bgp l2vpn evpn summary'` | Every node and gateway loopback Established, over IPv6 |
@@ -568,7 +565,10 @@ Failover tests:
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| Node /128s show `via 2001:db8:101::1` (via the core) | The core rewrites the next hop, or FRR picked the core's link-local | Check `nexthop-choice` on the core (Step 4b), and that `set ipv6 next-hop prefer-global` is in `UL-IN` |
+| Node /128s show `via 2001:db8:101::1` or the core's link-local (via the core) | The core rewrites the next hop | Set `nexthop-choice=propagate` on the core's node connections (Step 4b), and check that `set ipv6 next-hop prefer-global` is in `UL-IN` |
+| BGP sessions reset on every SDN Apply | A setting in `frr.conf.local` duplicates a generated one (`bgp router-id`, `advertise …`), and the two copies swap on each reload | Remove it from `frr.conf.local`; set the router-id through `dummy0`'s MAC (Step 2) |
+| BFD timers or profiles not what you configured | SDN's merge drops top-level `bfd` blocks | Use FRR's default timers (Step 4c) |
+| Core BGP sessions stay down with `use-bfd=yes` | RouterOS waits for BFD before BGP, and no `/routing bfd configuration` covers the interface | Add the interface to the BFD configuration |
 | Only one next hop per remote node, no ECMP | Different core ASNs in the two paths | `bgp bestpath as-path multipath-relax` and `maximum-paths` under ipv6 unicast |
 | A remote node's /128 is missing entirely | Shared node ASN, so the route is dropped as an AS-path loop | Use a unique `local-as` per node |
 | Underlay sessions up but no routes accepted | eBGP policy missing or the prefix-list doesn't match | Check `show bgp ipv6 unicast neighbors <core> received-routes` against `UL-IN` |
@@ -717,10 +717,10 @@ BGP connections:
 # underlay, one per node and VyOS (template shown for pve1 and vyos1)
 add name=ul-pve1 instance=core afi=ipv6 local.role=ebgp \
     local.address=2001:db8:101::1 remote.address=2001:db8:101::11 remote.as=4200000011 \
-    use-bfd=yes nexthop-choice=default input.filter=ul-in-pve1 output.filter-chain=ul-out
+    use-bfd=yes nexthop-choice=propagate input.filter=ul-in-pve1 output.filter-chain=ul-out
 add name=ul-vyos1 instance=core afi=ipv6 local.role=ebgp \
     local.address=2001:db8:101::1 remote.address=2001:db8:101::101 remote.as=4200000101 \
-    use-bfd=yes nexthop-choice=default input.filter=ul-in-vyos1 output.filter-chain=ul-out
+    use-bfd=yes nexthop-choice=propagate input.filter=ul-in-vyos1 output.filter-chain=ul-out
 
 # public handoff: one listening connection per family covers all nodes (shared ASN)
 add name=pub4 instance=core afi=ip local.role=ebgp \
@@ -744,7 +744,7 @@ Core B mirrors this with VLAN 102, `.2`/`::2` addresses, ASN 4200000002 and rout
 - **Underlay chains.** Repeat the `ul-in-*` chain and connection for every node and VyOS. They're the only per-node lines on the cores.
 - **Public handoff.** A connection with a prefix as `remote.address` listens for any node in that range, so adding a node needs no core change.
 - **Verify on the cores:**
-  - `/routing route print where bgp` shows node /128s with the node's VLAN address as gateway.
+  - `/routing route print where bgp` shows node /128s with the node's own address on the VLAN as gateway. FRR nodes send link-local next hops, so expect `fe80::…%vlan101` rather than the global address.
   - The public subnets are installed with multiple gateways (ECMP).
   - Neither the private customer ranges nor the handoff /24 is announced upstream.
 - **Mgmt gateway.** `2001:db8:100::1` is VRRPv3 on `vlan10` across both cores, or a firewall. Keep it outside the BGP config above.

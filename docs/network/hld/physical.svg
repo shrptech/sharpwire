@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 540" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <rect width="900" height="540" fill="#fff"/>
+  <g stroke="#555" stroke-width="2" fill="none">
+    <!-- upstream to cores -->
+    <line x1="410" y1="70" x2="270" y2="120"/>
+    <line x1="490" y1="70" x2="630" y2="120"/>
+    <!-- cores to leafs -->
+    <line x1="240" y1="180" x2="240" y2="270"/>
+    <line x1="300" y1="180" x2="590" y2="270"/>
+    <line x1="600" y1="180" x2="310" y2="270"/>
+    <line x1="660" y1="180" x2="660" y2="270"/>
+    <!-- nodes to leafs -->
+    <line x1="150" y1="420" x2="230" y2="330"/>
+    <line x1="190" y1="420" x2="580" y2="330"/>
+    <line x1="430" y1="420" x2="300" y2="330"/>
+    <line x1="470" y1="420" x2="600" y2="330"/>
+    <line x1="710" y1="420" x2="320" y2="330"/>
+    <line x1="750" y1="420" x2="670" y2="330"/>
+  </g>
+  <line x1="370" y1="300" x2="530" y2="300" stroke="#c0392b" stroke-width="5"/>
+  <text x="450" y="292" text-anchor="middle" font-size="11" fill="#c0392b">peer-link ≥ 2×10G</text>
+  <text x="450" y="318" text-anchor="middle" font-size="11" fill="#c0392b">(not an MLAG bond)</text>
+
+  <rect x="330" y="20" width="240" height="50" rx="25" fill="#f4f4f4" stroke="#888" stroke-dasharray="5 4"/>
+  <text x="450" y="42" text-anchor="middle" font-weight="bold">Upstream transit</text>
+  <text x="450" y="59" text-anchor="middle" font-size="11">eBGP, hand-configured</text>
+
+  <g fill="#e8f0fb" stroke="#2c5aa0" stroke-width="1.5">
+    <rect x="170" y="120" width="200" height="60" rx="6"/>
+    <rect x="530" y="120" width="200" height="60" rx="6"/>
+  </g>
+  <text x="270" y="145" text-anchor="middle" font-weight="bold">Core A</text>
+  <text x="270" y="163" text-anchor="middle" font-size="11">CCR2116-12G-4S+</text>
+  <text x="630" y="145" text-anchor="middle" font-weight="bold">Core B</text>
+  <text x="630" y="163" text-anchor="middle" font-size="11">CCR2116-12G-4S+</text>
+
+  <g fill="#eaf6ec" stroke="#2e7d32" stroke-width="1.5">
+    <rect x="170" y="270" width="200" height="60" rx="6"/>
+    <rect x="530" y="270" width="200" height="60" rx="6"/>
+  </g>
+  <text x="270" y="295" text-anchor="middle" font-weight="bold">Leaf A</text>
+  <text x="270" y="313" text-anchor="middle" font-size="11">CRS317-1G-16S+ · L2 only</text>
+  <text x="630" y="295" text-anchor="middle" font-weight="bold">Leaf B</text>
+  <text x="630" y="313" text-anchor="middle" font-size="11">CRS317-1G-16S+ · L2 only</text>
+
+  <g fill="#fdf3e3" stroke="#b26a00" stroke-width="1.5">
+    <rect x="100" y="420" width="140" height="56" rx="6"/>
+    <rect x="380" y="420" width="140" height="56" rx="6"/>
+    <rect x="660" y="420" width="140" height="56" rx="6"/>
+  </g>
+  <text x="170" y="444" text-anchor="middle" font-weight="bold">pve1</text>
+  <text x="170" y="462" text-anchor="middle" font-size="11">PVE 9 · bond0 2×10G</text>
+  <text x="450" y="444" text-anchor="middle" font-weight="bold">pve2</text>
+  <text x="450" y="462" text-anchor="middle" font-size="11">PVE 9 · bond0 2×10G</text>
+  <text x="730" y="444" text-anchor="middle" font-weight="bold">pve3 …</text>
+  <text x="730" y="462" text-anchor="middle" font-size="11">PVE 9 · bond0 2×10G</text>
+
+  <text x="450" y="510" text-anchor="middle" font-size="11" fill="#555">Every node: one LACP bond (fast rate, layer3+4 hash) with one 10G port to each leaf. All VLANs are tagged on the bond.</text>
+  <text x="450" y="528" text-anchor="middle" font-size="11" fill="#555">Out-of-band: IPMI and serial console on every device.</text>
+  <text x="450" y="228" text-anchor="middle" font-size="11" fill="#555" stroke="#fff" stroke-width="5" paint-order="stroke">each core: one LACP bond, one port to each leaf (MLAG)</text>
+</svg>

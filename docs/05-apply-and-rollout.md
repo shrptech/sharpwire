@@ -2,167 +2,117 @@
 
 Nov 20, 2026 · Draft
 
-Every push that can affect the management path arms a rollback on the target before changing anything, so a lost session reverts itself.
-
-## Rollback timer
-
-The armed rollback fires at T+N unless it is disarmed first. N is configurable per target type:
-
-| Target | T+N | Why |
-| --- | --- | --- |
-| RouterOS | 5 min | REST ops and health checks finish in well under a minute |
-| Proxmox node | 10 min | `ifreload`, FRR reload, BGP and BFD convergence, and the full node health-check set |
-| Corosync (node-local restore) **(later)** | 10 min | Same as Proxmox nodes |
-| VyOS **(phase 2)** | 5 min (commit-confirm) | |
-
-If health checks are still running when T+N is reached, the rollback fires, and the run is recorded as failed.
+Every push that can affect the management path arms a rollback on the target before changing anything, so a lost session reverts itself. The rollback fires at T+N unless it's disarmed first: **5 minutes on RouterOS, 10 minutes on Proxmox nodes** (time for `ifreload`, the FRR reload and convergence). If health checks are still running at T+N, the rollback fires and the run is recorded as failed.
 
 ## Stale check
 
-At apply time the controller re-fetches live state for every target in the plan. If a fingerprint changed, the plan is stale: its approval is void, and the recomputed plan needs a fresh approval. For the Proxmox cluster target, the fingerprint covers both the running and the pending SDN config.
+At apply time the controller re-fetches live state. If the fingerprint changed, the plan is stale: its approval is void and the recomputed plan needs a fresh one. On the cluster target, the fingerprint covers both the running and the pending SDN config.
 
-## Apply per driver
-
-### RouterOS
+## RouterOS
 
 RouterOS has no candidate config and no commit-confirm.
 
-1. Take an `/export` snapshot.
-2. Upload a rollback script built from the plan's inverse ops, and schedule it at T+N minutes. Each inverse op runs under its own `on-error`, so the script still restores everything it can after a partial apply.
-3. Apply ops via REST in plan order.
-4. Open a new session to prove reachability, then run health checks.
-5. Disarm the scheduler.
+1. Take an export: `POST /rest/execute {"script":"/export","as-string":""}` returns it in `ret`.
+2. Upload a rollback script built from the plan's inverse ops. Each op runs in its own `:do { } on-error={ }`, so it restores what it can after a partial apply. When it runs, the script removes both scheduler entries and leaves a marker (a comment).
+3. Arm **two** scheduler entries: one-shot at T+N, and `start-time=startup`. A one-shot whose time passes while the router is down never fires; the `startup` entry covers a reboot.
+4. Apply the ops via REST in plan order.
+5. Open a new session to prove reachability, then run health checks.
+6. Disarm by removing both entries.
 
-### Proxmox nodes (host files)
+Whether a rollback fired is read from the marker, never from `run-count`, which resets at boot. All of this was verified on RouterOS 7.25.1 (`spikes/routeros/FINDINGS.md`).
+
+## Proxmox nodes
 
 Through the `sharpwire-node` helper:
 
-1. Snapshot the managed files, **plus the generated `/etc/frr/frr.conf`**, into `/var/lib/sharpwire/rollback/<run-id>/`. FRR boots from the generated file, and pmxcfs isn't available before `networking.service` to regenerate it, so the boot-time restore puts back the generated file directly.
-2. **Arm** the rollback in two parts:
-   - write a marker file and start a transient systemd timer at T+N that restores the snapshot and reloads (`ifreload -a`, `sysctl --system`, the FRR reload);
-   - make sure the persistent unit `sharpwire-restore.service` is enabled. It is ordered before `networking.service` and restores the snapshot at boot whenever the marker exists.
-3. Write the files, run `ifreload -a -n`, then apply.
+1. Snapshot the managed files **and the generated `/etc/frr/frr.conf`** to `/var/lib/sharpwire/rollback/<run>/`. FRR boots from the generated file, and nothing can regenerate it early at boot.
+2. **Arm:** write the marker atomically and sync it, then start a transient systemd timer at T+N that restores the snapshot and reloads. The persistent `sharpwire-restore.service` restores the snapshot at boot whenever the marker exists.
+3. Write the files, validate, and apply ([Drivers](04-drivers.md#node-targets-host-files)).
 4. Open a **new** SSH session to prove reachability, then run health checks.
 5. Disarm: stop the timer, then remove the marker.
 
-The boot-time restore matters on Proxmox. A node that loses corosync while running HA resources self-fences and reboots, and a transient timer doesn't survive a reboot. Without the boot-time restore, the node would come back up on the broken config.
+The boot-time restore matters because a node that loses corosync while running HA resources fences itself and reboots, and a transient timer doesn't survive that. `sharpwire-restore.service` was tested through a reboot and a hard power-off (`spikes/node-linux/`):
+- `DefaultDependencies=no`, `RequiresMountsFor=/var/lib/sharpwire`, `ConditionPathExists=/var/lib/sharpwire/armed`, `WantedBy=sysinit.target`;
+- `After=local-fs.target systemd-sysctl.service pvenetcommit.service`;
+- `Before=network-pre.target networking.service frr.service pve-sdn-commit.service pve-cluster.service corosync.service`;
+- it re-runs `systemd-sysctl`, deletes `interfaces.new`, creates `/run/network`, removes the marker, and logs to the journal.
 
-Before pushing to a node, the controller requires that the cluster is quorate, that no other node is mid-apply, and that no SDN apply is running.
+Before pushing to a node, the controller requires a quorate cluster, no other node mid-apply, and no SDN apply running.
 
-### Proxmox cluster: SDN
+## Proxmox cluster: SDN
 
-SDN objects themselves can't cut the management path, because mgmt is static on `bond0.10`, outside SDN, and the hard guard keeps it that way. But an SDN apply also reloads networking on **every node at once**: it promotes any pending `/etc/network/interfaces.new`, runs `ifreload -a` on whatever `/etc/network/interfaces` holds, and reloads FRR. Anything unapplied on any node would go live everywhere, with no node-side rollback. (Spike: confirm exactly what PVE 9's SDN apply runs per node. The same per-node reload is probably the answer to the per-node FRR reload spike in [Drivers](04-drivers.md#node-targets-host-files).)
-
-So an SDN apply first takes **every** node's lock, and it is refused while any node:
-- has a pending `/etc/network/interfaces.new`;
-- has `/etc/network/interfaces` that differs from the running state (the helper runs `ifquery --check -a`);
+SDN objects can't touch the management path, because mgmt is static on `bond0.10` outside SDN. But an SDN apply reloads networking and FRR on **every node**: it promotes any `interfaces.new` and runs `ifreload -a` on whatever each node's file holds. So an SDN apply takes every node's lock, and is refused while any node:
+- has a pending `interfaces.new`;
+- has a running state that differs from its files: `ifquery --check -a`, plus the helper's default-route and extra-interface checks;
 - has a managed file that differs from its rendered intent, or an armed rollback.
 
-Under those preconditions, the per-node reload only re-applies what is already running. SDN rollback is therefore driven by the controller rather than armed on the target:
+Under those conditions the per-node reload only re-applies what's already running. That's why the SDN rollback is driven by the controller rather than armed on the target:
 
-1. Snapshot the running SDN config.
-2. Stage the ops, confirm the pending config equals the plan, then apply SDN.
-3. Run health checks on every managed node, plus the post-merge FRR check.
-4. On failure, stage the snapshot back, apply SDN again, and halt the rollout.
-
-Discarding pending changes, and protecting the stage → compare → apply sequence against a concurrent writer, depend on PVE 9's SDN lock and rollback endpoints. Both are spike items.
-
-SDN apply hits every node at once. That makes the pre-approval validation and the lab gate more important here than anywhere else (see [Risks](08-testing-build-plan-risks.md#risks)).
-
-### Proxmox cluster: cluster files (later)
-
-Read-only in v1; this describes the later apply path.
-
-- **`datacenter.cfg`** is written through pmxcfs with no armed rollback, since it can't affect reachability.
-- **`corosync.conf`** changes need a human and change one link at a time. The rollback is armed on **every** node: each node's helper snapshots its local `/etc/corosync/corosync.conf` and arms a timer that restores it and restarts corosync. This works even if the cluster has lost quorum, when `/etc/pve` is read-only. The mechanism is a spike item.
-
-### VyOS (phase 2)
-
-Apply via the HTTP API with commit-confirm, run health checks, then confirm. If the API on the running version lacks commit-confirm, use the RouterOS pattern.
+1. Take the SDN lock and snapshot the running SDN config.
+2. Stage, compare and apply ([Drivers](04-drivers.md#cluster-target-sdn)).
+3. Check every node's reload task, then run health checks on every managed node, including the post-merge check.
+4. On failure, stage the snapshot back and apply again. PVE commits before reloading, so rolling back always takes a second apply. Subnets left in PVE IPAM are cleaned up by the next plan.
+5. Release the lock.
 
 ## Health checks
 
-Health checks compare against the target's state **before** the apply, rather than requiring every session to be up. Otherwise, bringing up the public zone, adding a node, or any core change during an unrelated ISP outage would fail its own checks and roll back.
+1. **Baseline.** Before applying, record the checks below.
+2. **Must pass:** the management path (a new session works; the mgmt address, gateway and default route are unchanged) and, on nodes, the post-merge check.
+3. **No regressions:** nothing up in the baseline may go down, except what the plan removes.
+4. **Everything else is reported, not gated.** New sessions the plan adds, and failures that were already there before the apply, appear in the run's result. They don't trigger the rollback. The operator checks new sessions at the end of a procedure.
 
-1. **Baseline.** Before applying, the controller records the target's checkable state: every session, BFD peer, route and link the checks below cover.
-2. **Absolute checks.** The management path always has to pass: a new session works and the mgmt address, default route and gateway are unchanged. So does the post-merge FRR check.
-3. **No regressions.** Nothing that was up in the baseline may go down, except what the plan itself removes.
-4. **Expected up.** Sessions and routes the plan adds must come up, but only when their far end is already configured in live state. Sessions whose far end is a later step are recorded as **expected down**. The operator checks them at the end of the procedure (in v1 by running the target's checks again from the UI; later, the change set does it).
-5. **Pre-existing failures** (down in the baseline and not touched by the plan) are reported but don't fail the apply.
-
-The table lists what is checked for each target. Steps 1–5 decide how each check counts.
-
-| Target | Health checks |
+| Target | Checked |
 | --- | --- |
-| Core | API reachable; upstream sessions; an underlay session Established with BFD up for every managed node; node /128s installed with the node's VLAN address as gateway (third-party next hop); VLAN 300 sessions: one per node per family; public subnets installed with multiple gateways (warn only); **(phase 2)** NAT sessions to both gateways |
-| Leaf | API reachable; MLAG peer up; every bond member up; bridge VLAN membership as rendered |
-| Proxmox node | A new SSH session works; the only host default is IPv6 via mgmt and there's no IPv4 default; both underlay sessions Established; two next hops to every other node loopback; BFD peers up; every EVPN peer Established; `vrf_public` (once the public zone exists): 4 sessions with exactly one default received per family; post-merge FRR check; corosync quorate, every configured link up, and no token loss during the step |
-| Proxmox cluster (SDN) | SDN apply status OK on every node, including nodes that have joined the cluster but aren't managed yet. Their node-level checks are skipped; `show evpn vni` lists the expected VNIs on every node; **(phase 2)** each `vrf_cNN` has v4 and v6 defaults via the gateway VTEPs |
-| Gateway **(phase 2)** | API reachable; underlay sessions to both cores; EVPN sessions to every node and to the other gateway; each customer VRF holds its type-5 subnets from the nodes; outside sessions to both cores; conntrack-sync healthy **if enabled** |
-
-These are the network doc's Step 7 checks that a machine can run. Checks 13 and 14 (VM data plane and customer isolation) need guests. Phase 2 replaces check 14 with a routing-table isolation check: `vrf_cNN` holds only its own prefixes and a default, and each customer VRF on the gateways holds only its veth default and its own type-5 routes.
+| Core | API; an underlay session with BFD per node; node /128s via the node's own address on the VLAN, which is its link-local (`fe80::…%vlan101`); one VLAN 300 session per node per family; upstream sessions |
+| Leaf | API; MLAG peer; bond members; bridge VLANs as rendered |
+| Proxmox node | New SSH session; IPv6 default via mgmt only; both underlay sessions; two next hops to every other loopback; BFD peers; every EVPN peer; the `vrf_public` sessions with one default per family; corosync quorate, every link up, no token loss |
+| Cluster (SDN) | Every node's reload task OK; `show evpn vni` lists the expected VNIs on every node |
 
 ## Rollout
 
-Each target has a lock: a session-level Postgres advisory lock (`pg_advisory_lock`) held on the apply worker's own connection for the whole apply, and released automatically if the worker dies. sharpstack's transaction-scoped `advisory_xact_lock` doesn't fit, because it would hold a transaction open for up to the 10-minute rollback timer. Locks are taken in a fixed order, following sharpstack's lock-ordering rule. A redundancy group rolls out one member at a time, and the next member starts only after the previous one passes health checks. A failure halts the rollout and leaves the remaining members untouched.
+Each target has a lock: a session-level Postgres advisory lock (`pg_advisory_lock`) on the apply worker's own connection, released automatically if the worker dies. Locks are taken in a fixed order. Redundant members roll out one at a time: core A, then core B; nodes one by one, waiting for corosync to settle. A failure halts the rollout and leaves the rest untouched. The cluster target never runs in the same step as a node.
 
-- **Leafs and cores:** never both in one step.
-- **Proxmox nodes:** one node at a time, in a stable order, waiting for corosync to settle between nodes.
-- **Proxmox cluster:** a single step by nature. It is never in the same stage as node-file changes.
-- **Gateways (phase 2):** the standby first, then the active.
+## v1 procedures
 
-### Change set stages
+In v1 every target gets its own plan, and the operator applies them in this order. [Change sets](later.md#change-sets) will automate the order later.
 
-In v1 there are no change sets. The table below is the order the operator applies the separate per-target plans in, and it's the order the later change-set engine automates. Stages that touch leafs or cluster files are done by hand in v1.
+**Bring up the public zone** (once):
+1. leafs: VLAN 300 on the node bonds, the core bonds and the peer-link (by hand);
+2. cores: VLAN 300, the `pub4`/`pub6` connections and filters;
+3. cluster SDN: zone `public`;
+4. nodes: `bond0.300` and the `vrf_public` FRR sessions, one node at a time;
+5. re-run the core checks: one VLAN 300 session per node per family.
 
-Within a change set, stages run in a fixed order, and each stage rolls out serially as above. The order is driven by dependencies: L2 before L3, the far end of a session before the near end, and the gateway before the zones that depend on it.
+**Add public capacity:** cluster SDN only: the VNet and its subnets.
 
-| Change | Stages |
-| --- | --- |
-| **`public-vnet`** (phase 1) | 1. Cluster SDN: add the VNet and subnets, apply |
-| **Create the public zone** (one-off bring-up) | 0. Leafs: VLAN 300 on the node and core bonds and the peer-link (by hand in v1) · 1. Cores: VLAN 300, the `pub4`/`pub6` connections and filters (the node sessions are expected down) · 2. Cluster SDN: the `public` zone, apply · 3. Nodes: `bond0.300` and the `vrf_public` FRR sessions, one node at a time · 4. Run the core checks again: one VLAN 300 session per node per family |
-| **Add a Proxmox node** | see below |
-| **`customer-onboard`** (phase 2) | 1. Gateways: the customer block, standby then active · 2. Cluster SDN: zone `cNN`, VNets and subnets, apply · 3. Isolation and default-route checks |
-| **Customer offboarding** (phase 2, human) | The reverse: cluster SDN first, then the gateways |
+**Add a Proxmox node:**
+1. NetBox: the node, its cabling, its bond with `mlag-id`, its addresses, ASN and router-id. Configure the leaf ports by hand; the leaf drift check confirms them.
+2. Bootstrap by hand: install PVE, set static mgmt on `bond0.10`, run the bootstrap package, and join with `pvecm add … --link0 <mgmt>`.
+3. Mark the node managed. Its first plan must not change the mgmt values the hard guard covers. If NetBox and the node disagree there, fix NetBox. Any other bootstrap differences show up as [plan warnings](02-intent-model.md#plan-warnings).
+4. Cores: the node's chain and connection, core A then core B.
+5. Cluster SDN: the controller's peer list. This generates the new node's `vrf_public` and `frr.conf` before its own files need them.
+6. The new node's host files.
+7. The other nodes' `/etc/hosts`, one at a time.
+8. Corosync link1 for the node, by hand.
+9. Re-run the core and SDN checks.
 
-### Adding a Proxmox node
-
-A node can't be managed until it is reachable, so adding one is split around a manual bootstrap:
-
-1. **Leaf ports (human-approved).** Add the node, its cabling and its bond (`mlag-id`) in NetBox. sharpwire pushes the leaf bonds and VLAN membership, leaf by leaf. **In v1** the leaf ports are configured by hand, and sharpwire's leaf drift check confirms they match NetBox.
-2. **Manual bootstrap.** Install PVE, configure static mgmt on `bond0.10`, run the sharpwire bootstrap package, and join the cluster with `pvecm add … --link0 <mgmt>`. link1 for the node is added in step 4, once the node's loopback is reachable over the underlay.
-3. **Adopt the node.** Mark the node managed in NetBox. Its first plan is an **adoption plan**:
-   - The guarded mgmt values in NetBox (address, gateway, VLAN, bond members) must equal what the node is running. If they don't, validation tells the operator to fix NetBox; sharpwire never "corrects" a node's mgmt to match NetBox.
-   - Other differences in `bond0`/`bond0.10` from the hand bootstrap, such as a missing `egress-qos-map`, are protected changes that need an admin override.
-4. **Change set B (human-approved).** sharpwire stages:
-   1. cores: the underlay connection and `ul-in-*` chain, core A then core B (the session to the new node is expected down);
-   2. cluster SDN: the controller peer list, apply. The new node is a cluster member, so this generates its `interfaces.d/sdn`, `vrf_public` and `frr.conf` before its own files reference them;
-   3. the new node: all of its host files (underlay, `bond0.300`, `frr.conf.local`, `/etc/hosts`). The core sessions and EVPN peers now have to come up;
-   4. existing nodes: `/etc/hosts`, one node at a time;
-   5. cluster files: the node's corosync link1 (needs its own approval because corosync is protected; done by hand in v1);
-   6. run the core and SDN checks again;
-   7. **(phase 2)** gateways: the new EVPN neighbor, standby then active.
-
-Removing a node runs these stages in reverse and is always human-approved.
+Removing a node runs these steps in reverse.
 
 ## Greenfield bring-up
 
-The network is built from scratch, so no running device has to be adopted. Each device starts from a minimal hand-applied **bootstrap**, and sharpwire builds everything else. The bootstrap's mgmt values must equal NetBox; that is the only thing the first plan checks rather than changes.
+Each device starts from a minimal hand bootstrap whose mgmt values match NetBox:
 
 | Device | Bootstrap (by hand) | Then |
 | --- | --- | --- |
-| Leafs | Full config by hand in v1, following the network doc's Appendix A.1 | sharpwire's drift check must show zero diff before anything else continues |
-| Cores | RouterOS with no default config (`/system reset-configuration no-defaults=yes`), the VLAN 10 mgmt interface and address, the sharpwire service account, and REST over HTTPS | sharpwire's first plan builds the rest: underlay, VLAN 300, upstream, VRRP, firewall |
-| Proxmox nodes | PVE install, static mgmt on `bond0.10`, the bootstrap package; the first node creates the cluster and the others join with `--link0 <mgmt>` | The [adoption plan](#adding-a-proxmox-node), then the node's host files |
-| Cluster | Corosync link1 by hand (v1) | SDN controller, then the public zone ([stages](#change-set-stages)) |
-
-The driver baseline for a core is exactly this bootstrap: the mgmt interface, its address and the service account are never removed.
+| Leafs | Full config, per network doc A.1 and the [rules](02-intent-model.md#routeros) | The drift check shows zero diff |
+| Cores | `/system reset-configuration no-defaults=yes`, the mgmt VLAN interface and address, the service account, REST over HTTPS. Upstream, VRRP and the firewall by hand | sharpwire builds the underlay and the public handoff |
+| Proxmox nodes | PVE, static mgmt, the bootstrap package, cluster create or join | Steps 3–9 of adding a node |
+| Cluster | Corosync link1 | The SDN controller, then the public zone |
 
 ## Crash recovery
 
-A single controller instance is safe because rollback lives on the target, except for SDN, which is controller-driven. On startup:
-
-1. Any run left in `applying` is marked interrupted.
-2. The controller re-fetches live state for its targets and records whether a rollback fired. On nodes this comes from the helper's restore log; on RouterOS, from the scheduler state.
-3. For a cluster target with pending SDN changes from the interrupted run, the controller discards them, and if SDN had already been applied it restores the snapshot.
-4. The controller re-plans. It never resumes a run.
+On startup:
+1. Runs left in `applying` are marked interrupted.
+2. Live state is re-fetched, and whether a rollback fired is read from the helper's restore log or the RouterOS marker.
+3. On the cluster: force-release the SDN lock and `POST /cluster/sdn/rollback`. If the apply had already gone through, restore the snapshot with a second apply.
+4. Re-plan. A run is never resumed.
