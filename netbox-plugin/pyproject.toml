@@ -1,0 +1,34 @@
+[project]
+name = "sharpwire-netbox"
+version = "0.1.0"
+description = "sharpwire's NetBox plugin: the SDN Zone and VNet models, and the custom fields, roles and tags sharpwire reads."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+classifiers = [
+    "Framework :: Django",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
+]
+# No runtime dependencies: the plugin runs inside NetBox's own virtualenv and uses only what NetBox ships.
+dependencies = []
+
+[dependency-groups]
+dev = [
+    # The NetBox release the plugin is built and tested against. Keep in step with min_version/max_version in
+    # sharpwire_netbox/__init__.py and with COMPATIBILITY.md.
+    "netbox==4.7.5",
+    "tblib>=3.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sharpwire_netbox"]
+exclude = ["sharpwire_netbox/tests"]
+
+[tool.uv]
+# NetBox pins psycopg[c], which compiles against libpq. Dev and CI use the prebuilt wheel of the same version.
+override-dependencies = ["psycopg[binary,pool]==3.3.8"]

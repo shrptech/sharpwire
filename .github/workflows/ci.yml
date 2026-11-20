@@ -129,3 +129,53 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run pytest --ignore=tests/integration
+
+  netbox-plugin:
+    name: NetBox plugin tests (NetBox 4.7)
+    runs-on: [self-hosted, ubuntu-26.04]
+    needs: [lint, runner-user]
+    container:
+      image: buildpack-deps:resolute@sha256:159ea382e6fb39e62480ee932113f885f7bd787cd4895fc4dc71aebb175077fd
+      options: --user ${{ needs.runner-user.outputs.user }}
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: netbox
+          POSTGRES_USER: sharpwire
+          POSTGRES_PASSWORD: sharpwire
+        options: >-
+          --tmpfs /var/lib/postgresql
+          --health-cmd "pg_isready -U sharpwire"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: docker.dragonflydb.io/dragonflydb/dragonfly:v2.0.0
+        options: >-
+          --ulimit memlock=-1
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: netbox-plugin
+    env:
+      NETBOX_DB_HOST: postgres
+      NETBOX_DB_PORT: "5432"
+      NETBOX_REDIS_HOST: redis
+      NETBOX_REDIS_PORT: "6379"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --locked
+      - name: no model change without a migration
+        run: NETBOX_ROOT=$PWD/testing uv run netbox makemigrations sharpwire_netbox --check --dry-run
+      - name: netbox test
+        run: NETBOX_ROOT=$PWD/testing uv run netbox test sharpwire_netbox --noinput
+      - run: uv build --wheel

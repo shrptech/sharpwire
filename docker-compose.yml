@@ -17,5 +17,19 @@ services:
       timeout: 5s
       retries: 10
 
+  # NetBox's cache and task queue, for the NetBox plugin's tests (netbox-plugin/). Dragonfly speaks the Redis
+  # protocol, as in sharpstack. Port 6380, so it can run next to sharpstack's on 6379.
+  redis:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:v2.0.0
+    ulimits:
+      memlock: -1
+    ports:
+      - "127.0.0.1:6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres:

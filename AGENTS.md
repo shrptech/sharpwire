@@ -22,6 +22,10 @@ uv run pytest                         # unit tests (tests/integration/ needs the
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pre-commit install             # once per clone
+
+# NetBox plugin (needs `docker compose up -d postgres redis`)
+cd netbox-plugin && uv sync
+NETBOX_ROOT=$PWD/testing uv run netbox test sharpwire_netbox --keepdb
 ```
 
 ## Layout
@@ -38,8 +42,9 @@ uv run pre-commit install             # once per clone
 | `app/enums.py` | Every shared value list, as a `Literal`. Imports nothing from the app |
 | `alembic/` | Migrations |
 | `tests/` | Unit tests; `tests/integration/` needs live NetBox and the labs |
+| `netbox-plugin/` | The NetBox plugin (`sharpwire_netbox`): its own package, uv project and Django conventions, built against NetBox 4.7 ([README](netbox-plugin/README.md)) |
 
-Still to come, per the build plan: the NetBox plugin (its own package, built against NetBox 4.7) and the Proxmox node bootstrap package (the `sharpwire-node` helper, its sudoers rule and `sharpwire-restore.service`).
+Still to come, per the build plan: the Proxmox node bootstrap package (the `sharpwire-node` helper, its sudoers rule and `sharpwire-restore.service`).
 
 Import direction: `api → jobs, services, drivers, schemas, models`; `jobs → services, drivers, schemas, models`; `drivers → intent, schemas`, never `api` or `jobs`. `intent` imports nothing from the app.
 
@@ -75,6 +80,13 @@ Import direction: `api → jobs, services, drivers, schemas, models`; `jobs → 
 - **Job queue:** Postgres instead of Celery and Redis. There is one controller with low job volume, and the apply gate lives with the plans.
 - **UI:** a minimal server-rendered operator UI (Jinja templates via `fastapi[standard]`), not a SPA.
 - **Staff login:** Kanidm OIDC (ported from sharpstack's `app/services/oidc.py`, plus groups → roles), not passkeys.
+
+## The NetBox plugin
+
+- It follows NetBox's plugin API and core's patterns (copy from `ipam`'s `VRF`/`RouteTarget`), not the controller's conventions. It uses only what NetBox ships, so it has no runtime dependencies.
+- `netbox-plugin/pyproject.toml` pins the exact NetBox release it's tested against. Moving that pin also moves `min_version`/`max_version` in `sharpwire_netbox/__init__.py` and `COMPATIBILITY.md`.
+- Every model change gets a new migration (`netbox makemigrations sharpwire_netbox`). CI fails on a model change without one.
+- The custom fields, roles, platforms and tags the intent builder looks up are declared in `sharpwire_netbox/provisioning.py`. A new one goes there and in the [NetBox mapping](docs/02-intent-model.md#netbox-mapping) together.
 
 ## Testing
 

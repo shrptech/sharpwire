@@ -31,8 +31,8 @@ markers = [
 [tool.ruff]
 target-version = "py314"
 line-length = 120
-# Spikes are throwaway lab scripts, not product code.
-extend-exclude = ["spikes"]
+# Spikes are throwaway lab scripts, not product code. Django migrations are generated.
+extend-exclude = ["spikes", "netbox-plugin/sharpwire_netbox/migrations"]
 
 [tool.ruff.lint]
 select = [
@@ -51,6 +51,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# Django and NetBox declare views, forms, serializers and test cases with mutable class attributes.
+"netbox-plugin/*" = ["RUF012"]
+# strawberry resolves these annotations at runtime, and the names are imported only under TYPE_CHECKING.
+"netbox-plugin/sharpwire_netbox/graphql/*" = ["UP037"]
 "tests/*" = [
     "E501",    # test payloads/assertions can be long; not worth wrapping
     "RUF059",  # fixtures often return tuples where a test only needs some elements

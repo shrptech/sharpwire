@@ -1,0 +1,5 @@
+# Written by NetBox at runtime under NETBOX_ROOT.
+media/
+reports/
+scripts/
+static/

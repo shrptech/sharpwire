@@ -30,7 +30,7 @@ Drift detection ships first, read-only, so the diff engine is proven before shar
    - BFD from the cores to FRR on non-listening connections;
    - `l2mtu`, LACP and MLAG on hardware.
 2. **Intent builder and NetBox plugin:**
-   - the two plugin models, the custom fields, roles and tags ([Intent model](02-intent-model.md));
+   - the two plugin models, the custom fields, roles and tags ([Intent model](02-intent-model.md)): **done** (`netbox-plugin/`, NetBox 4.7);
    - the GraphQL builder;
    - the node bootstrap package.
 3. **Read-only drivers** for RouterOS and Proxmox, with drift detection and alerts. The RouterOS renderer and the intent model already exist (`app/drivers/routeros/`, `app/intent/`).

@@ -32,13 +32,13 @@ The intent builder reads NetBox via GraphQL into the vendor-neutral model in `ap
 | VLAN interface (core `vlan101`, node `bond0.101`) | Virtual `dcim.Interface` with its VLAN as untagged VLAN, `mtu`, and the IP addresses assigned to it |
 | Addresses | `ipam.IPAddress` assigned to the interface, with its mask |
 | Node loopback | The /128 `ipam.IPAddress` on the node's `dummy0` |
-| SDN zone | Plugin model **Zone**: kind `public`, VRF (`ipam.VRF`), L3VNI, MTU |
-| VNet | Plugin model **VNet**: zone, VNI (also its tag and name `vnetNNN`), subnets (`ipam.Prefix` in the zone's VRF, gateway as an anycast `ipam.IPAddress`), and `status` (`planned`/`active`, written by sharpwire) |
+| SDN zone | Plugin model **Zone**: kind `public` (one zone of that kind; its PVE zone ID is the kind), VRF (`ipam.VRF`, one zone per VRF), L3VNI, MTU |
+| VNet | Plugin model **VNet**: zone, VNI (also its tag and name `vnetNNN`, so at most 9999 to fit PVE's 8-character VNet ID), subnets (`ipam.Prefix` in the zone's VRF, each in at most one VNet, and protected from deletion or a VRF change while it is one; gateway as an anycast `ipam.IPAddress`), and `status` (`planned`/`active`, written by sharpwire through the REST API; the UI forms don't edit it, and changing an active VNet's VNI, zone or subnets puts it back to `planned`, so sharpstack stops using it until sharpwire re-applies it) |
 | Cluster firewall | Custom field `firewall_enabled` on the NetBox cluster (v1 checks only this) |
 
 sharpstack also writes to NetBox ([sharpstack integration](09-sharpstack-integration.md#ownership)). Event rules fire only on objects sharpwire uses, and never on sharpwire's own writes.
 
-The two plugin models, the custom fields and the roles and tags above are all the plugin adds in v1. Everything else is NetBox core.
+The two plugin models, the custom fields and the roles, platforms and tags above are all the plugin adds in v1. Everything else is NetBox core. The plugin creates the custom fields, roles, platforms and tags after every `migrate` (`netbox-plugin/sharpwire_netbox/provisioning.py`). It only adds what's missing, and logs anything it can't create as declared instead of overwriting an admin's change.
 
 ## Rules
 
