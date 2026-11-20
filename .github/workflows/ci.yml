@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.13.0"
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  # The runner's own user, so nothing the containers below write to the shared _work directory ends up owned by root.
+  runner-user:
+    name: Record the runner's user
+    runs-on: [self-hosted, ubuntu-26.04]
+    outputs:
+      user: ${{ steps.runner-user.outputs.user }}
+    steps:
+      - id: runner-user
+        run: echo "user=$(id -u):$(id -g)" >> "$GITHUB_OUTPUT"
+
+  lint:
+    name: Lint (ruff)
+    runs-on: [self-hosted, ubuntu-26.04]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  typecheck:
+    name: Type check (mypy)
+    runs-on: [self-hosted, ubuntu-26.04]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run mypy
+
+  migrations:
+    name: Alembic migrations apply cleanly
+    runs-on: [self-hosted, ubuntu-26.04]
+    needs: [runner-user]
+    # In a container, so services are reached by name and publish no host port (the runners share one host).
+    # Same pinned image as sharpstack's CI; update both together.
+    container:
+      image: buildpack-deps:resolute@sha256:159ea382e6fb39e62480ee932113f885f7bd787cd4895fc4dc71aebb175077fd
+      options: --user ${{ needs.runner-user.outputs.user }}
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: sharpwire
+          POSTGRES_USER: sharpwire
+          POSTGRES_PASSWORD: sharpwire
+        # In memory, so no job leaves its database behind on the shared host.
+        options: >-
+          --tmpfs /var/lib/postgresql
+          --health-cmd "pg_isready -U sharpwire"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://sharpwire:sharpwire@postgres:5432/sharpwire
+      NETBOX_URL: https://netbox.ci.invalid
+      NETBOX_TOKEN: ci-placeholder-token
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --locked
+      - name: alembic upgrade head
+        run: uv run alembic upgrade head
+      - name: latest migration downgrades and re-applies
+        # Skipped until the first revision exists.
+        run: |
+          if ls alembic/versions/*.py >/dev/null 2>&1; then
+            uv run alembic downgrade -1 && uv run alembic upgrade head
+          fi
+
+  test:
+    name: Unit tests
+    runs-on: [self-hosted, ubuntu-26.04]
+    needs: [lint, typecheck, runner-user]
+    container:
+      image: buildpack-deps:resolute@sha256:159ea382e6fb39e62480ee932113f885f7bd787cd4895fc4dc71aebb175077fd
+      options: --user ${{ needs.runner-user.outputs.user }}
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: sharpwire_test
+          POSTGRES_USER: sharpwire
+          POSTGRES_PASSWORD: sharpwire
+        options: >-
+          --tmpfs /var/lib/postgresql
+          --health-cmd "pg_isready -U sharpwire"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://sharpwire:sharpwire@postgres:5432/sharpwire_test
+      NETBOX_URL: https://netbox.ci.invalid
+      NETBOX_TOKEN: ci-placeholder-token
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest --ignore=tests/integration

@@ -1,0 +1,21 @@
+# Local development support services. The controller itself runs on the host with `uv run fastapi dev`.
+# Port 5433, so it can run next to sharpstack's Postgres on 5432.
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: sharpwire
+      POSTGRES_USER: sharpwire
+      POSTGRES_PASSWORD: sharpwire
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "sharpwire"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres:
