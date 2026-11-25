@@ -1,7 +1,9 @@
 """A device's REST view of rendered resources, with RouterOS's quirks, for diff tests.
 
-It mimics what spikes/routeros/FINDINGS.md recorded on 7.25.1: every value a string, fields at their default left
-out, booleans read back as true/false, `.id` and `.nextid` on every row. Step 3b replaces this with real captures.
+It mimics what a CHR on 7.25.1 returns (tests/fixtures/routeros/core-a.live.json): every value a string, booleans
+as true/false, `.id` and `.nextid` on every row. Interface and address menus show every managed field, defaults
+included; routing menus leave out a field at its default. Tests use it for leafs, which a CHR can't host (no MLAG),
+and for variations on the captured core.
 """
 
 from collections.abc import Iterable
@@ -19,9 +21,17 @@ def device_view(resources: Iterable[Resource]) -> dict[str, list[dict[str, str]]
     state: dict[str, list[dict[str, str]]] = {}
     for r in resources:
         row = {".id": f"*{next(ids):X}"}
-        for name, value in r.fields:
-            spec = FIELDS[r.path][name]
-            if spec.default is not None and normalise(spec, value) == normalise(spec, spec.default):
+        values = dict(r.fields)
+        shows_defaults = not r.path.startswith("routing/")
+        for name, spec in FIELDS[r.path].items():
+            value = values.get(name, spec.default if shows_defaults else None)
+            if value is None:
+                continue
+            if (
+                not shows_defaults
+                and spec.default is not None
+                and normalise(spec, value) == normalise(spec, spec.default)
+            ):
                 continue
             row[name] = _BOOL_READBACK.get(value, value) if spec.kind == "bool" else value
         state.setdefault(r.path, []).append(row)

@@ -38,9 +38,13 @@ Dynamic sessions from a listening connection all get the same name (`pub6-1`), s
 
 **The diff** (`app/drivers/routeros/diff.py`) compares only the managed fields listed for each menu in `app/drivers/routeros/fields.py`, normalised (booleans, lists, addresses, durations). A field absent from a GET reads as its RouterOS default, and a managed field sharpwire doesn't render for a row is wanted at its default, so a value set by hand shows as drift. Those defaults are RouterOS facts used only to compare, and never sent. Each role reads only its own menus. The plan's fingerprint covers the managed fields of every row in them, including unmanaged rows; order counts only within a filter chain.
 
-**REST behaviour the diff relies on** (RouterOS 7.25.1, `spikes/routeros/FINDINGS.md`):
+**Reading.** `app/drivers/routeros/client.py` checks the version first, refusing anything outside 7.25.x, then GETs each of the role's menus with `.proplist` set to the managed fields plus `.id`, `.nextid` and `dynamic`. It never writes. The device's certificate is checked against the bootstrap's CA, hostname included.
+
+**REST behaviour the diff relies on** (RouterOS 7.25.1, `spikes/routeros/FINDINGS.md` and the CHR capture in `tests/fixtures/routeros/`):
 - Values are strings, and booleans read back normalised (`yes` becomes `true`).
-- **A field at its default value is left out of a GET**, so the driver keeps a table of defaults for every field it renders.
+- **Interface and address menus return every field, defaults included. Routing menus leave a field out until it's been written**, even with its default value, and nothing reports the default. So the driver keeps a table of defaults for every field it manages, and treats a missing field as its default.
+- `unset` isn't accepted for these fields, so an apply that puts a field back to its default writes the default value.
+- A CHR has no `/interface/bridge/mlag` and no `l2mtu` on virtio ports; both are checked in the hardware lab.
 - `POST /rest/execute` returns HTTP 200 even when the command fails, so the driver checks `ret` every time.
 - Deleting an interface leaves its addresses behind, which is why dependents are removed first.
 - With `use-bfd=yes`, BGP stays down until BFD is up. Validation rejects a connection on an interface no BFD configuration row covers.

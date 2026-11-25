@@ -5,8 +5,15 @@ missing field as its default. A field sharpwire manages but doesn't render for a
 a value set by hand, or one sharpwire stopped rendering, shows as drift. Fields not listed here are never compared.
 
 These defaults are RouterOS facts, used only to compare. They never reach a device, so they aren't intent rules.
-None means "unset": the field is absent when it has no value. **The defaults come from RouterOS's documentation and
-haven't been checked on a device yet**: step 3b captures every menu from a CHR on 7.25 and corrects this table.
+None means "unset": the field is absent when it has no value.
+
+What a CHR on 7.25.1 showed (tests/fixtures/routeros/):
+- interface and address menus return every field, defaults included, so their defaults below are as read;
+- routing menus leave a field out until it's been written, even with its default value, and `get` doesn't report
+  it either. Their defaults are RouterOS's documented ones. That only matters for a field sharpwire doesn't render,
+  and an absent field and one written back to its default compare equal, as they should;
+- `unset` isn't accepted for these fields, so a field going back to its default is written with the default;
+- virtio ports have no `l2mtu`, and a CHR has no `/interface/bridge/mlag`. Both need the hardware lab.
 """
 
 from collections.abc import Mapping
@@ -168,7 +175,8 @@ def normalise(field: Field, value: str | None) -> str | None:
             case "int":
                 return str(int(value))
             case "list":
-                return ",".join(sorted({v.strip() for v in value.split(",") if v.strip()}))
+                # An empty list reads back as "": the same as unset.
+                return ",".join(sorted({v.strip() for v in value.split(",") if v.strip()})) or None
             case "ip":
                 return str(ip_interface(value) if "/" in value else ip_address(value))
             case "duration":
