@@ -17,6 +17,7 @@ docker compose up -d postgres         # dev Postgres on 127.0.0.1:5433
 cp .env.example .env                  # then fill in NetBox
 uv sync
 uv run fastapi dev app/main.py        # controller with reload
+uv run python -m app.jobs.worker      # the job worker and scheduler (reconciles every 5 minutes)
 uv run alembic upgrade head
 uv run pytest                         # unit tests (tests/integration/ needs the labs)
 uv run ruff check . && uv run ruff format --check .
@@ -45,7 +46,7 @@ NETBOX_ROOT=$PWD/testing uv run netbox test sharpwire_netbox --keepdb
 | `node/` | The Proxmox node bootstrap package: the `sharpwire-node` helper (stdlib-only Python 3.13, the version PVE 9 ships), its sudoers rule, `sharpwire-restore.service` and `install.sh` ([README](node/README.md)). Built into a tarball by `node/build.py` |
 | `netbox-plugin/` | The NetBox plugin (`sharpwire_netbox`): its own package, uv project and Django conventions, built against NetBox 4.7 ([README](netbox-plugin/README.md)) |
 
-Import direction: `api → jobs, services, drivers, schemas, models`; `jobs → services, drivers, schemas, models`; `drivers → intent, schemas`, never `api` or `jobs`. `intent` imports nothing from the app.
+Import direction: `api → jobs, services, drivers, schemas, models`; `jobs → services, drivers, intent, schemas, models`; `services → intent, schemas, models`; `drivers → intent, schemas`, never `api` or `jobs`. `intent` imports nothing from the app.
 
 ## Rules specific to sharpwire
 

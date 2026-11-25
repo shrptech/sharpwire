@@ -22,7 +22,7 @@ Targets accept API and SSH connections only from the controller's address on the
 
 ## Alerts
 
-v1 stores alerts in an `alerts` table and shows them in the UI. Each alert has:
+v1 stores alerts in an `alerts` table and shows them in the UI. Until the UI arrives in step 5, the read-only JSON API serves them (`GET /api/alerts`, with plans and targets), behind a bearer token (`API_TOKEN`). Each alert has:
 - a severity, target, related plan or run, and message;
 - a dedup key and topic, following sharpstack's outbox pattern, so a repeat updates the open alert;
 - automatic resolution once the condition clears;
@@ -35,6 +35,7 @@ v1 stores alerts in an `alerts` table and shows them in the UI. Each alert has:
 | Reconcile overdue for a target | critical |
 | Cluster firewall disabled | critical |
 | A target differs from NetBox (including foreign pending SDN changes) | warning |
+| A target can't be read or planned, or NetBox can't be read | warning |
 | A cross-target check fails on live state | warning |
 
 **Known gap:** nothing pages anyone, and a dead controller raises nothing. That's acceptable while every change is made by a person in the UI. Alertmanager is the first thing to add when that stops being true ([later](later.md#alerting-and-credentials)).

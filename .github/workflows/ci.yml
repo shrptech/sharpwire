@@ -79,6 +79,11 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://sharpwire:sharpwire@postgres:5432/sharpwire
       NETBOX_URL: https://netbox.ci.invalid
       NETBOX_TOKEN: ci-placeholder-token
+      NETBOX_WEBHOOK_SECRET: ci-placeholder-secret
+      ROUTEROS_USERNAME: sharpwire
+      ROUTEROS_PASSWORD: ci-placeholder-password
+      ROUTEROS_CA_FILE: /nonexistent/routeros-ca.pem
+      API_TOKEN: ci-placeholder-token
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.0
@@ -111,7 +116,7 @@ jobs:
       - name: mypy against the 3.13 stdlib
         run: uv run mypy --python-version 3.13 node tests/node
       - name: pytest on 3.13
-        run: uv run --no-project --python 3.13 --with pytest pytest -p no:cacheprovider -o addopts="" tests/node
+        run: uv run --no-project --python 3.13 --with pytest pytest -p no:cacheprovider --noconftest -o addopts="" tests/node
 
   test:
     name: Unit tests
@@ -137,6 +142,11 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://sharpwire:sharpwire@postgres:5432/sharpwire_test
       NETBOX_URL: https://netbox.ci.invalid
       NETBOX_TOKEN: ci-placeholder-token
+      NETBOX_WEBHOOK_SECRET: ci-placeholder-secret
+      ROUTEROS_USERNAME: sharpwire
+      ROUTEROS_PASSWORD: ci-placeholder-password
+      ROUTEROS_CA_FILE: /nonexistent/routeros-ca.pem
+      API_TOKEN: ci-placeholder-token
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.0

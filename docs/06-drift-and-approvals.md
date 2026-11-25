@@ -8,7 +8,9 @@ Any non-empty plan means a target differs from NetBox. sharpwire never fixes tha
 
 Plans are built two ways:
 - **every 5 minutes**, for every managed target;
-- **on NetBox changes**, through event rules, debounced per target. The rules ignore sharpwire's own NetBox user.
+- **on NetBox changes**, through event rules calling sharpwire's webhook (`POST /hooks/netbox`, signed with a shared secret). A change queues one reconcile of the whole fabric 10 seconds out, which the changes that follow join: every plan reads the whole intent anyway. The rules ignore sharpwire's own NetBox user.
+
+Both are the same job (`app/jobs/reconcile.py`), run by the worker (`app/jobs/worker.py`), which is also the scheduler. It builds the intent once, syncs the targets, then reads and plans each managed target in turn. A target that can't be read gets an alert and doesn't stop the others. A managed target nothing has planned for three intervals is overdue.
 
 Proxmox-specific sources of drift:
 - SDN changes made in the GUI, including **pending** ones, which also block applies;

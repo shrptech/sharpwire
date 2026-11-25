@@ -5,9 +5,12 @@ Every driver returns a PlanDraft. An empty one means the target matches NetBox; 
 applies it once a person approves it (step 5).
 """
 
+import uuid
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict
 
-from app.enums import OpAction
+from app.enums import OpAction, PlanStatus
 
 
 class _Frozen(BaseModel):
@@ -97,3 +100,31 @@ class PlanDraft(_Frozen):
     @property
     def diff(self) -> str:
         return "".join(f"{op.describe()}\n" for op in self.ops)
+
+
+# --- Wire shapes for stored plans ------------------------------------------------------------------------------
+
+
+class PlanResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    target_id: uuid.UUID
+    status: PlanStatus
+    hash: str
+    fingerprint: str
+    netbox_change_id: int | None
+    diff: str
+    ops: list[Op]
+    inverse_ops: list[Op]
+    warnings: list[PlanWarning]
+    guard_violations: list[str]
+    unmanaged: list[Unmanaged]
+    created_at: datetime
+    last_seen_at: datetime
+    superseded_at: datetime | None
+
+
+class PlanPage(BaseModel):
+    items: list[PlanResponse]
+    total: int

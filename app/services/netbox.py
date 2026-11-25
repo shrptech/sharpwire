@@ -8,8 +8,8 @@ The lists are separate requests, so an edit in NetBox while they're read can lan
 (docs/03-pipeline-and-validation.md) catches that.
 
 The token needs view permission on: devices, interfaces, device roles, platforms, cables, VLANs, prefixes,
-IP addresses, ASNs, IPAM roles and tags. Without it, NetBox hides objects instead of failing, and the build reports
-them as missing.
+IP addresses, ASNs, IPAM roles and tags, and on the changelog (core object changes), for the position a plan records.
+Without it, NetBox hides objects instead of failing, and the build reports them as missing.
 """
 
 import json
@@ -150,3 +150,27 @@ async def _post(netbox_url: str, netbox_token: str, client: httpx.AsyncClient, q
     if not isinstance(data, dict):
         raise NetBoxError("NetBox returned no data for the intent query.")
     return data
+
+
+async def latest_change_id(netbox_url: str, netbox_token: str, client: httpx.AsyncClient | None = None) -> int | None:
+    """The id of NetBox's newest changelog entry, which a plan records as the intent's position.
+
+    Read before the snapshot, so a change made while the snapshot is read is newer than the position. None when
+    NetBox can't say (no entries, or the token can't view the changelog): the plan is still built.
+    """
+    url = f"{netbox_url.rstrip('/')}/api/core/object-changes/"
+    headers = {"Authorization": f"Bearer {netbox_token}", "Accept": "application/json"}
+    try:
+        if client is None:
+            async with httpx.AsyncClient(timeout=30) as own:
+                response = await own.get(url, params={"ordering": "-id", "limit": 1}, headers=headers)
+        else:
+            response = await client.get(url, params={"ordering": "-id", "limit": 1}, headers=headers)
+        response.raise_for_status()
+        results = response.json().get("results") or []
+    except httpx.HTTPError, ValueError, AttributeError:
+        logger.warning("NetBox's changelog couldn't be read", exc_info=True)
+        return None
+    first = results[0] if results and isinstance(results[0], dict) else {}
+    change_id = first.get("id")
+    return change_id if isinstance(change_id, int) else None

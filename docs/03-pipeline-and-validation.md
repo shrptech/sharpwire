@@ -20,7 +20,7 @@ Each driver pins the RouterOS or PVE versions it supports and refuses to plan ag
 
 ## Plan lifecycle
 
-- **One open plan per target.** A new plan supersedes the target's previous unapproved one.
+- **One open plan per target.** A new plan supersedes the target's previous unapproved one. The same plan seen again (same hash: target, ops and live-state fingerprint) is kept, so drift seen every 5 minutes is one plan. An empty plan supersedes the open one with nothing: the target is back in sync.
 - **One kind of plan.** sharpwire doesn't classify plans as intent or drift. The plan shows the NetBox changelog entries since the target's last successful apply, so the approver can see whether NetBox changed or the device did.
 - **Rejection.** A rejected plan is recorded by its hash, and the same hash isn't raised again.
 - **Stale.** If live state changed before apply, the approval is void and the recomputed plan needs a fresh one ([Stale check](05-apply-and-rollout.md#stale-check)).

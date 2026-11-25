@@ -36,7 +36,7 @@ Drift detection ships first, read-only, so the diff engine is proven before shar
 3. **Read-only drivers** for RouterOS and Proxmox, with drift detection and alerts. No operator UI yet: plans and alerts are served by a read-only JSON API, and the UI comes with approvals in step 5.
    - 3a. The plan model and the RouterOS diff, with its guards and warnings: **done** (`app/schemas/plan.py`, `app/drivers/routeros/`);
    - 3b. RouterOS live fetch over REST, with the field defaults checked against a CHR capture: **done** (`app/drivers/routeros/client.py`, `tests/fixtures/routeros/`). Leafs are tested from simulated device views until the hardware lab, since a CHR has no MLAG;
-   - 3c. Targets, plans, alerts and the Postgres job queue; the 5-minute reconcile and the NetBox event rules; the JSON API;
+   - 3c. Targets, plans, alerts and the Postgres job queue; the 5-minute reconcile and the NetBox event rules; the JSON API: **done** (`app/models/`, `app/jobs/`, `app/api/`). It plans the cores and leafs;
    - 3d. Proxmox SDN render and read;
    - 3e. Node file renders, read through the helper over SSH (paramiko);
    - 3f. Cluster files and the cluster firewall's `enable` option.
