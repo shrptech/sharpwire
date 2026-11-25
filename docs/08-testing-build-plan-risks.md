@@ -33,7 +33,13 @@ Drift detection ships first, read-only, so the diff engine is proven before shar
    - the two plugin models, the custom fields, roles and tags ([Intent model](02-intent-model.md)): **done** (`netbox-plugin/`, NetBox 4.7);
    - the GraphQL builder: **done** (`app/intent/builder.py`, `app/services/netbox.py`);
    - the node bootstrap package, with the helper's read and rollback commands: **done** (`node/`). Writing and applying the files comes with step 6, as a helper upgrade.
-3. **Read-only drivers** for RouterOS and Proxmox, with drift detection and alerts. The RouterOS renderer and the intent model already exist (`app/drivers/routeros/`, `app/intent/`).
+3. **Read-only drivers** for RouterOS and Proxmox, with drift detection and alerts. No operator UI yet: plans and alerts are served by a read-only JSON API, and the UI comes with approvals in step 5.
+   - 3a. The plan model and the RouterOS diff, with its guards and warnings: **done** (`app/schemas/plan.py`, `app/drivers/routeros/`). The field defaults are unverified until 3b;
+   - 3b. RouterOS live fetch over REST, with the field defaults checked against a CHR capture;
+   - 3c. Targets, plans, alerts and the Postgres job queue; the 5-minute reconcile and the NetBox event rules; the JSON API;
+   - 3d. Proxmox SDN render and read;
+   - 3e. Node file renders, read through the helper over SSH (paramiko);
+   - 3f. Cluster files and the cluster firewall's `enable` option.
 4. **Cross-target validation**, run continuously against live state.
 5. **Core apply:** plans, the stale check, approvals in the UI, armed rollback, serial rollout.
 6. **Proxmox apply:** SDN first, then node files.

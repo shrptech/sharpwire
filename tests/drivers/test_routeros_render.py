@@ -88,7 +88,7 @@ def test_leaf_vlans_follow_netbox_tagged_vlans() -> None:
 
 def test_rsc_quotes_values_with_spaces_and_dollar() -> None:
     rendered = to_rsc([item("system/script", ("name", "x"), ("source", 'say "$hi"'))])
-    assert rendered == '/system script\nadd name=x source="say \\"\\$hi\\""\n'
+    assert rendered == '/system script\nadd name=x source="say \\"\\$hi\\"" comment=sharpwire\n'
 
 
 def test_resource_rejects_missing_key_field() -> None:

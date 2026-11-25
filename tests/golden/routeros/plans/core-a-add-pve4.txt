@@ -1,0 +1,3 @@
++ /routing/filter/rule chain=ul-in-pve4 comment=sharpwire:ul-in-pve4:reject rule=reject
++ /routing/filter/rule chain=ul-in-pve4 comment=sharpwire:ul-in-pve4:accept-loopback rule="if (dst == 2001:db8:ffff::14/128) { accept }" (before chain=ul-in-pve4 comment=sharpwire:ul-in-pve4:reject)
++ /routing/bgp/connection name=ul-pve4 instance=core afi=ipv6 local.role=ebgp local.address=2001:db8:101::1 remote.address=2001:db8:101::14 remote.as=4200000014 use-bfd=yes nexthop-choice=propagate input.filter=ul-in-pve4 output.filter-chain=ul-out comment=sharpwire

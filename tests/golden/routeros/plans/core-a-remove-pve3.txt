@@ -1,0 +1,3 @@
+- /routing/bgp/connection name=ul-pve3
+- /routing/filter/rule chain=ul-in-pve3 comment=sharpwire:ul-in-pve3:accept-loopback
+- /routing/filter/rule chain=ul-in-pve3 comment=sharpwire:ul-in-pve3:reject

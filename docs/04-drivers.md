@@ -8,7 +8,7 @@ Each driver defines its **managed scope**: what it reads, diffs and may change. 
 
 **Transport.** RouterOS REST over HTTPS on the mgmt VLAN. Pinned to RouterOS 7.25.
 
-**Managed scope in v1: the rows sharpwire renders.** In each RouterOS menu sharpwire renders into, it owns the rows its render produces. Other rows in those menus are reported in the plan as **unmanaged** and never removed. That leaves room for what v1 configures by hand on the cores: upstream ISP sessions (in the same `/routing/bgp/connection` menu), VRRP, the firewall and system services. Once those are in NetBox, the scope becomes fully declarative ([later](later.md#core-intent-beyond-v1)).
+**Managed scope in v1: the rows sharpwire renders.** In each RouterOS menu sharpwire renders into, it owns the rows its render produces, and marks them on the device: `comment=sharpwire`, or `sharpwire:<chain>:<name>` on filter rules. A marked row that's no longer rendered (a node removed from NetBox, say) is removed. Unmarked rows in those menus are reported in the plan as **unmanaged** and never changed. A hand-bootstrapped row that matches a rendered natural key is adopted: the plan sets its comment. That leaves room for what v1 configures by hand on the cores: upstream ISP sessions (in the same `/routing/bgp/connection` menu), VRRP, the firewall and system services. Once those are in NetBox, the scope becomes fully declarative ([later](later.md#core-intent-beyond-v1)).
 
 **Leafs are read-only in v1.** The driver renders and diffs them for drift and validation, but refuses to apply.
 
@@ -34,7 +34,9 @@ Leafs:
 
 Dynamic sessions from a listening connection all get the same name (`pub6-1`), so health checks key them by `remote.address`.
 
-**Baseline (never removed).** Physical ports, the built-in groups (`read`, `write`, `full`), the sharpwire service account, and dynamic entries.
+**Baseline (never removed).** Physical ports, the built-in groups (`read`, `write`, `full`), the sharpwire service account, and dynamic entries. A rendered port missing from the device stops the plan; sharpwire can't create one.
+
+**The diff** (`app/drivers/routeros/diff.py`) compares only the managed fields listed for each menu in `app/drivers/routeros/fields.py`, normalised (booleans, lists, addresses, durations). A field absent from a GET reads as its RouterOS default, and a managed field sharpwire doesn't render for a row is wanted at its default, so a value set by hand shows as drift. Those defaults are RouterOS facts used only to compare, and never sent. Each role reads only its own menus. The plan's fingerprint covers the managed fields of every row in them, including unmanaged rows; order counts only within a filter chain.
 
 **REST behaviour the diff relies on** (RouterOS 7.25.1, `spikes/routeros/FINDINGS.md`):
 - Values are strings, and booleans read back normalised (`yes` becomes `true`).

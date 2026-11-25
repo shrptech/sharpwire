@@ -68,7 +68,8 @@ Fixed shapes and constants in code. Each has one home in code, named after the r
 | Public handoff | listening connections `pub4` and `pub6` with remote address set to the handoff prefixes and remote AS the handoff ASN, `use-bfd=yes`, `output.default-originate=always`, in `pub-in`, out `default-out` |
 | `pub-in` | accept each public range from its length up to `max_subnet_length`, reject |
 | `default-out` | accept `0.0.0.0/0` and `::/0`, reject |
-| Filter rule comments | `sharpwire:<chain>:<rule name>` |
+| Ownership marker | `comment=sharpwire` on every row sharpwire adds, other than filter rules and settings menus |
+| Filter rule comments | `sharpwire:<chain>:<rule name>`, which also marks the rule as sharpwire's |
 | BFD | 300 ms × 3 (FRR's defaults, used on the nodes); one `/routing/bfd/configuration` row covering the interfaces with BFD-enabled sessions |
 | Leaf bridge | `vlan-filtering=yes`; MLAG peer port is the LAG cabled to the other leaf; bridge VLANs from the LAGs' tagged VLANs; the bridge itself is tagged where the leaf has a VLAN interface |
 | Leaf edge bonds | `frame-types=admit-only-vlan-tagged` on MLAG bonds |
@@ -100,7 +101,7 @@ Some changes are legal but risky, so the plan shows them as **warnings** that th
 
 Warnings are raised for changes to:
 - the leaf MLAG config, or the peer-link's VLANs;
-- a core's mgmt VLAN interface, or its BGP instance (ASN, router-id);
+- a core's BGP instance (ASN, router-id), or a core's or leaf's mgmt VLAN interface MTU (anything else on it is a [hard guard](03-pipeline-and-validation.md#hard-guards));
 - a node's `bond0`/`bond0.10` attributes outside the hard guard (MTU, bond options, `egress-qos-map`);
 - a node's `dummy0`, ASN or router-id;
 - any corosync setting.

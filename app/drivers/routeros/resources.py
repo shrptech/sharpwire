@@ -7,6 +7,10 @@ diff may treat it:
 - `baseline`: it always exists on the device (a physical port). sharpwire only sets fields, and never removes it.
 - `settings`: a menu with a single row and no key (e.g. `/interface/bridge/mlag`). sharpwire only sets fields.
 
+Ownership is marked on the device. Every `item` carries `comment=sharpwire`, and every ordered rule a
+`sharpwire:<chain>:<name>` comment, so the diff can remove a row sharpwire made once it's no longer rendered, and
+report every other row in the menu as unmanaged without touching it (docs/04-drivers.md#routeros-cores-and-leafs).
+
 Ordered menus (routing filter rules) are identified by chain plus a sharpwire comment, which the driver keeps unique
 (RouterOS itself accepts duplicate comments). Their `position` within the chain is kept separately: it isn't part of
 the identity, so inserting a rule doesn't change the identity of the rules after it. On the device, order comes
@@ -45,13 +49,26 @@ class Resource:
         return tuple((k, values[k]) for k in self.key_fields)
 
     @property
+    def key_dict(self) -> dict[str, str]:
+        return dict(self.key)
+
+    @property
     def identity(self) -> tuple[str, tuple[tuple[str, str], ...]]:
         """What the diff matches a live row on: the menu and the natural key."""
         return (self.path, self.key)
 
 
+MARKER = "sharpwire"
+RULE_COMMENT_PREFIX = f"{MARKER}:"
+
+
+def owned(comment: str | None) -> bool:
+    """Whether a live row's comment marks it as sharpwire's."""
+    return comment is not None and (comment == MARKER or comment.startswith(RULE_COMMENT_PREFIX))
+
+
 def item(path: str, *fields: tuple[str, str], key: tuple[str, ...] = ("name",)) -> Resource:
-    return Resource(path=path, fields=tuple(fields), key_fields=key)
+    return Resource(path=path, fields=(*fields, ("comment", MARKER)), key_fields=key)
 
 
 def baseline(path: str, *fields: tuple[str, str], key: tuple[str, ...] = ("name",)) -> Resource:
@@ -60,9 +77,6 @@ def baseline(path: str, *fields: tuple[str, str], key: tuple[str, ...] = ("name"
 
 def settings(path: str, *fields: tuple[str, str]) -> Resource:
     return Resource(path=path, fields=tuple(fields), key_fields=(), kind="settings")
-
-
-RULE_COMMENT_PREFIX = "sharpwire:"
 
 
 def ordered(path: str, chain: str, name: str, position: int, *fields: tuple[str, str]) -> Resource:

@@ -13,7 +13,7 @@ Push and drift detection share one pipeline: a non-empty plan means the target d
    - Proxmox SDN: API objects keyed by ID.
    - Proxmox node and cluster files: whole files, parsed into stanzas so the diff stays readable.
 4. **Fetch live state.** Read via RouterOS REST, the PVE API, or SSH (node files). Normalize, then drop dynamic entries and the driver's baseline.
-5. **Diff.** Object-level add, set and remove, plus move ops for ordered lists. Ops are sorted by dependency: referenced objects are created first, and dependents are removed first.
+5. **Diff.** Object-level add, set and remove, plus move ops for ordered lists. Ops are sorted by dependency and make-before-break: adds and sets first, referenced objects before the objects that use them, then removes, dependents first. The inverse ops come from simulating the plan on the live state and diffing back to it, and the same simulation proves the plan converges: diffing its result against the render gives no ops.
 6. **Plan.** Immutable and hashed. It holds the NetBox changelog position it was built from, a live-state fingerprint, ordered ops, inverse ops, a readable diff, and any [plan warnings](02-intent-model.md#plan-warnings).
 
 Each driver pins the RouterOS or PVE versions it supports and refuses to plan against anything else.
@@ -54,7 +54,7 @@ These checks are the main reason to drive the whole network from one model. Each
 
 A plan is rejected, with no way to override, if it:
 
-- changes what the controller's management session depends on. On a node: the mgmt address, gateway and VLAN on `bond0.10`, the members of `bond0`, and the IPv6 default route. On a RouterOS device: its mgmt VLAN interface and address;
+- changes what the controller's management session depends on. On a node: the mgmt address, gateway and VLAN on `bond0.10`, the members of `bond0`, and the IPv6 default route. On a RouterOS device: its mgmt VLAN interface (other than its MTU, which is a [warning](02-intent-model.md#plan-warnings)) and its addresses, and removing the interface it sits on, now or once applied. Adopting one of these rows, by setting only sharpwire's marker, is allowed;
 - changes more than one corosync link (once corosync apply exists);
 - would leave a redundancy group (the core pair, the leaf pair, the PVE cluster) with no healthy member, for example by touching both cores in one step;
 - removes a VNet, subnet or zone that is still in use: NetBox holds IP addresses inside its prefixes, or a sharpstack `PlatformSubnet` references it. Without this, deleting a VNet in NetBox would remove the bridge under running VMs.
