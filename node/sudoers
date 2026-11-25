@@ -1,0 +1,5 @@
+# Installed by the sharpwire-node bootstrap package as /etc/sudoers.d/sharpwire.
+# The controller's SSH user may run the helper as root, and nothing else. The helper checks its own
+# arguments. This is still root-equivalent (docs/07-security-and-observability.md#target-accounts).
+Defaults:sharpwire !requiretty, env_reset
+sharpwire ALL=(root) NOPASSWD: /usr/local/sbin/sharpwire-node

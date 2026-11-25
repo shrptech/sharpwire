@@ -84,7 +84,7 @@ All three are read through the PVE API or the node helper, and only diffed. Appl
 
 ### Node targets: host files
 
-**Transport.** SSH as a dedicated `sharpwire` user, with sudo restricted to one helper, `sharpwire-node`. The helper reads and writes the managed files, validates, arms and disarms the rollback, and reloads. A versioned bootstrap package installs the user, the helper, the sudoers rule and `sharpwire-restore.service`. An operator runs it once per node, and again to upgrade the helper. The controller refuses to plan for a node whose helper is older than it supports.
+**Transport.** SSH as a dedicated `sharpwire` user, with sudo restricted to one helper, `sharpwire-node`. The helper reads and writes the managed files, validates, arms and disarms the rollback, and reloads. A versioned bootstrap package (a tarball with an `install.sh`, [`node/`](../node/README.md)) installs the user, the helper, the sudoers rule and `sharpwire-restore.service`. An operator runs it once per node, passing the controller's public key and mgmt address (the key goes into `authorized_keys` as `restrict,from="<address>"`), and runs it again to upgrade the helper. The controller refuses to plan for a node whose helper is older than it supports. The helper holds no rules: `read` returns the managed files and the live state raw, and the controller decides what drifted.
 
 **Managed scope.** Whole files, diffed by stanza:
 
@@ -112,4 +112,4 @@ All three are read through the PVE API or the node helper, and only diffed. Appl
 - every rendered line is present, with route-maps compared by content, never by sequence number (the merge renumbers them);
 - **reload-stable:** a second `frr-reload.py --reload` changes nothing and resets no session.
 
-**Drift** is a normalised comparison of the rendered and live state. `ifquery --check -a` misses a deleted default route, interfaces running outside the file, and removed stanzas, so the helper checks those itself.
+**Drift** is a normalised comparison of the rendered and live state. `ifquery --check -a` misses a deleted default route, interfaces running outside the file, and removed stanzas, so the controller checks those itself from the `ip` views the helper's `read` returns.

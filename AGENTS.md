@@ -42,9 +42,8 @@ NETBOX_ROOT=$PWD/testing uv run netbox test sharpwire_netbox --keepdb
 | `app/enums.py` | Every shared value list, as a `Literal`. Imports nothing from the app |
 | `alembic/` | Migrations |
 | `tests/` | Unit tests; `tests/integration/` needs live NetBox and the labs |
+| `node/` | The Proxmox node bootstrap package: the `sharpwire-node` helper (stdlib-only Python 3.13, the version PVE 9 ships), its sudoers rule, `sharpwire-restore.service` and `install.sh` ([README](node/README.md)). Built into a tarball by `node/build.py` |
 | `netbox-plugin/` | The NetBox plugin (`sharpwire_netbox`): its own package, uv project and Django conventions, built against NetBox 4.7 ([README](netbox-plugin/README.md)) |
-
-Still to come, per the build plan: the Proxmox node bootstrap package (the `sharpwire-node` helper, its sudoers rule and `sharpwire-restore.service`).
 
 Import direction: `api → jobs, services, drivers, schemas, models`; `jobs → services, drivers, schemas, models`; `drivers → intent, schemas`, never `api` or `jobs`. `intent` imports nothing from the app.
 

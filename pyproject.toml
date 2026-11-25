@@ -36,6 +36,10 @@ line-length = 120
 # Spikes are throwaway lab scripts, not product code. Django migrations are generated.
 extend-exclude = ["spikes", "netbox-plugin/sharpwire_netbox/migrations"]
 
+[tool.ruff.per-file-target-version]
+# The node helper runs on the python3 Proxmox VE 9 ships (Debian 13), not the controller's.
+"node/*" = "py313"
+
 [tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
@@ -64,7 +68,7 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.14"
-files = ["app", "tests"]
+files = ["app", "node", "tests"]
 plugins = ["pydantic.mypy"]
 warn_unused_configs = true
 warn_redundant_casts = true

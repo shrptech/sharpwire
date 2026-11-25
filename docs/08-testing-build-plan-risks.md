@@ -32,7 +32,7 @@ Drift detection ships first, read-only, so the diff engine is proven before shar
 2. **Intent builder and NetBox plugin:**
    - the two plugin models, the custom fields, roles and tags ([Intent model](02-intent-model.md)): **done** (`netbox-plugin/`, NetBox 4.7);
    - the GraphQL builder: **done** (`app/intent/builder.py`, `app/services/netbox.py`);
-   - the node bootstrap package.
+   - the node bootstrap package, with the helper's read and rollback commands: **done** (`node/`). Writing and applying the files comes with step 6, as a helper upgrade.
 3. **Read-only drivers** for RouterOS and Proxmox, with drift detection and alerts. The RouterOS renderer and the intent model already exist (`app/drivers/routeros/`, `app/intent/`).
 4. **Cross-target validation**, run continuously against live state.
 5. **Core apply:** plans, the stale check, approvals in the UI, armed rollback, serial rollout.

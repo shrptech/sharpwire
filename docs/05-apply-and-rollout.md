@@ -43,7 +43,7 @@ Before pushing to a node, the controller requires a quorate cluster, no other no
 
 SDN objects can't touch the management path, because mgmt is static on `bond0.10` outside SDN. But an SDN apply reloads networking and FRR on **every node**: it promotes any `interfaces.new` and runs `ifreload -a` on whatever each node's file holds. So an SDN apply takes every node's lock, and is refused while any node:
 - has a pending `interfaces.new`;
-- has a running state that differs from its files: `ifquery --check -a`, plus the helper's default-route and extra-interface checks;
+- has a running state that differs from its files: `ifquery --check -a`, plus the controller's default-route and extra-interface checks on what the helper reads;
 - has a managed file that differs from its rendered intent, or an armed rollback.
 
 Under those conditions the per-node reload only re-applies what's already running. That's why the SDN rollback is driven by the controller rather than armed on the target:

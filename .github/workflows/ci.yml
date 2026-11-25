@@ -96,6 +96,23 @@ jobs:
             uv run alembic downgrade -1 && uv run alembic upgrade head
           fi
 
+  # The node helper runs on the python3 Proxmox VE 9 ships, not the controller's, so it's tested on that too.
+  node-helper:
+    name: Node helper on Python 3.13
+    runs-on: [self-hosted, ubuntu-26.04]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --locked
+      - name: mypy against the 3.13 stdlib
+        run: uv run mypy --python-version 3.13 node tests/node
+      - name: pytest on 3.13
+        run: uv run --no-project --python 3.13 --with pytest pytest -p no:cacheprovider -o addopts="" tests/node
+
   test:
     name: Unit tests
     runs-on: [self-hosted, ubuntu-26.04]

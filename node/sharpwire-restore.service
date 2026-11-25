@@ -1,0 +1,27 @@
+# Installed by the sharpwire-node bootstrap package. Restores an armed rollback's snapshot at boot,
+# before networking, FRR and corosync start, so a node that fenced and rebooted mid-apply comes back on
+# its old config (docs/05-apply-and-rollout.md#proxmox-nodes). Tested in spikes/node-linux/ (Q3).
+[Unit]
+Description=sharpwire: restore an armed node-file snapshot at boot
+Documentation=file:///usr/local/sbin/sharpwire-node
+DefaultDependencies=no
+RequiresMountsFor=/var/lib/sharpwire
+ConditionPathExists=/var/lib/sharpwire/armed
+After=local-fs.target systemd-sysctl.service pvenetcommit.service
+Before=network-pre.target networking.service frr.service pve-sdn-commit.service pve-cluster.service corosync.service shutdown.target
+Wants=network-pre.target
+# DefaultDependencies=no drops this and Before=shutdown.target; a restore must never run into a shutdown.
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/sharpwire-node boot-restore
+# Oneshot units have no start timeout by default, and this one holds up networking. A restore takes
+# seconds; if it hangs, boot carries on and the marker is left for the controller to see.
+TimeoutStartSec=5min
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=sysinit.target
