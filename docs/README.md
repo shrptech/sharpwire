@@ -52,6 +52,7 @@ The single record of decisions. Other docs link here rather than restate them.
 | Source of truth | NetBox: core models plus custom fields `asn`, `router_id`, `l2mtu`, `mlag_id`, `max_subnet_length`, `firewall_enabled`, `sharpwire_managed`, and plugin models Zone and VNet. Fixed shapes are named rules ([Intent model](02-intent-model.md)) |
 | Starting point | Greenfield. Devices start from a minimal hand bootstrap |
 | Proxmox | sharpwire manages SDN, node files and the cluster files; it is the only SDN writer |
+| Node networking | Linux networking through ifupdown2: an 802.3ad bond, VLAN interfaces and Linux bridges. Open vSwitch isn't supported. Existing nodes (on OVS today) are reinstalled onto the designed layout rather than migrated |
 | Proxmox rollback | A systemd timer on the node, plus a boot-time restore |
 | RouterOS rollback | An inverse-op script with two schedulers (T+N and `startup`) |
 | Rollback timer | RouterOS 5 min, Proxmox 10 min |

@@ -119,3 +119,7 @@ All three are read through the PVE API or the node helper, and only diffed. Appl
 - **reload-stable:** a second `frr-reload.py --reload` changes nothing and resets no session.
 
 **Drift** is a normalised comparison of the rendered and live state. `ifquery --check -a` misses a deleted default route, interfaces running outside the file, and removed stanzas, so the controller checks those itself from the `ip` views the helper's `read` returns.
+
+What the helper's `read` gets from ifupdown2 (checked on a PVE 9 node):
+- `ifquery -a --format json` is a list with one entry per interface **and address family**: an interface with IPv4 and IPv6 addresses appears twice, so entries are merged by `name`. Each entry has `name`, `addr_method`, `addr_family`, `auto` (a boolean) and `config`, whose values are all strings. A multi-valued option stays one space-separated string (`"bond-slaves": "eno1 eno2"`). Without `-a` it fails.
+- `ifquery -a --check --format json` has the same entries plus `config_status` (each checked attribute, `"pass"` or `"fail"`) and `status`. Its `config` holds only the attributes ifupdown2 can check against the running system, typically just `address`: `gateway` lines and other options don't appear at all, so a `"pass"` says nothing about them. It exits 0 when clean and 1 on drift.

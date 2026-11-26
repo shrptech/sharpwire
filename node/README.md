@@ -46,8 +46,10 @@ A restore puts back every file it can. Until it's done, the run stays armed, the
 
 Writing and applying the files comes in build plan step 6, as a helper upgrade.
 
-Everything here is tested without a node (`tests/node/`), on the controller's Python and on 3.13. Before the first production install, check on the nested PVE lab:
-- the `ifquery --format json` output;
-- the unit's ordering against the real PVE units: `systemd-analyze verify sharpwire-restore.service`, and no `ordering cycle` in `journalctl -b`;
-- that `systemd-run` takes `StartLimitIntervalSec=0` and `Restart=on-failure` for the transient restore;
-- `install.sh` on a fresh node, an upgrade, and a re-key.
+Everything here is tested without a node (`tests/node/`), on the controller's Python and on 3.13. Checked so far:
+- on a PVE 9 node: the `ifquery -a --format json` and `ifquery -a --check --format json` output `read` returns ([Drivers](../docs/04-drivers.md#node-targets-host-files));
+- in a Debian 13 container (systemd 257): `systemd-run` takes the transient restore's `Restart=on-failure`, `RestartSec` and `StartLimitIntervalSec=0`; `install.sh` installs, upgrades and re-keys; `systemd-analyze verify` is clean.
+
+Before the first production install, check on the nested PVE lab:
+- the unit's ordering against the real PVE units: no `ordering cycle` in `journalctl -b`, and a real boot restore;
+- `install.sh` on a real PVE node.

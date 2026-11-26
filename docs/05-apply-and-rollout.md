@@ -97,6 +97,8 @@ In v1 every target gets its own plan, and the operator applies them in this orde
 1. NetBox: the node, its cabling, its bond with `mlag-id`, its addresses, ASN and router-id. Configure the leaf ports by hand; the leaf drift check confirms them.
 2. Bootstrap by hand: install PVE, set static mgmt on `bond0.10`, run the bootstrap package, and join with `pvecm add … --link0 <mgmt>`.
 3. Mark the node managed. Its first plan must not change the mgmt values the hard guard covers. If NetBox and the node disagree there, fix NetBox. Any other bootstrap differences show up as [plan warnings](02-intent-model.md#plan-warnings).
+
+   Only a node on the designed layout can be marked managed: a Linux 802.3ad `bond0`, IPv6-only mgmt on `bond0.10`, and the underlay VLANs and `dummy0` ([network doc](network/proxmox-evpn-ipv6-underlay.md)). A node on Open vSwitch, or on any other layout, would get a first plan that rewrites its whole network config, which the hard guard rejects. Existing nodes, on OVS today, aren't migrated: each is removed from the cluster and reinstalled, then added back with the steps above, so it joins greenfield.
 4. Cores: the node's chain and connection, core A then core B.
 5. Cluster SDN: the controller's peer list. This generates the new node's `vrf_public` and `frr.conf` before its own files need them.
 6. The new node's host files.
