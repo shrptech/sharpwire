@@ -28,14 +28,20 @@ Whether a rollback fired is read from the marker, never from `run-count`, which 
 Through the `sharpwire-node` helper:
 
 1. Snapshot the managed files **and the generated `/etc/frr/frr.conf`** to `/var/lib/sharpwire/rollback/<run>/`. FRR boots from the generated file, and nothing can regenerate it early at boot.
-2. **Arm:** write the marker atomically and sync it, then start a transient systemd timer at T+N that restores the snapshot and reloads. The persistent `sharpwire-restore.service` restores the snapshot at boot whenever the marker exists.
+2. **Arm:** write the marker (the run and the boot it was armed in) atomically and sync it, then start a transient systemd timer at T+N that restores the snapshot and reloads. The persistent `sharpwire-restore.service` restores the snapshot at boot whenever the marker exists and was written before this boot.
 3. Write the files, validate, and apply ([Drivers](04-drivers.md#node-targets-host-files)).
 4. Open a **new** SSH session to prove reachability, then run health checks.
-5. Disarm: stop the timer, then remove the marker.
+5. Disarm: remove the marker, then stop the timer. A timer left behind finds nothing armed and does nothing; the other order could leave a marker that rolls a good apply back at the next boot. Disarm fails if the rollback has fired, even partly.
+
+**When a restore fails**, the node stays armed and the restore is retried, every 30 s by the timer's unit and again at the next boot:
+- a file that can't be written fails the attempt without reloading anything, and is retried until it can be;
+- once every file is back, failed reloads (`ifreload`, sysctl, FRR) are retried for 5 attempts in all. Then the restore stops, recorded as incomplete, and the marker goes: what's left is the controller's alert and a reboot, which starts from the restored files. An FRR that's enabled but stopped (the bad config can leave it failed) is started.
+
+**Known limit:** a sysctl key the bad `90-sdn.conf` set, and the snapshot's doesn't mention, stays set after a restore, at boot too. That matters once node apply exists (step 6), which is when it gets fixed.
 
 The boot-time restore matters because a node that loses corosync while running HA resources fences itself and reboots, and a transient timer doesn't survive that. `sharpwire-restore.service` was tested through a reboot and a hard power-off (`spikes/node-linux/`):
 - `DefaultDependencies=no`, `RequiresMountsFor=/var/lib/sharpwire`, `ConditionPathExists=/var/lib/sharpwire/armed`, `WantedBy=sysinit.target`;
-- `After=local-fs.target systemd-sysctl.service pvenetcommit.service`;
+- `After=local-fs.target systemd-sysctl.service pvenetcommit.service systemd-journald.socket`;
 - `Before=network-pre.target networking.service frr.service pve-sdn-commit.service pve-cluster.service corosync.service`;
 - it re-runs `systemd-sysctl`, deletes `interfaces.new`, creates `/run/network`, removes the marker, and logs to the journal.
 

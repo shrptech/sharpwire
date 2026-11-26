@@ -25,6 +25,7 @@ import stat
 import subprocess
 import sys
 import syslog
+import tempfile
 import time
 import traceback
 from collections.abc import Callable, Iterator, Sequence
@@ -65,6 +66,12 @@ COMMAND_TIMEOUT_SECONDS = 120
 RELOAD_TIMEOUT_SECONDS = 900
 # The transient restore unit retries until it succeeds, so a failed restore isn't single-shot.
 RESTORE_RETRY_SECONDS = 30
+# Once every file is back, failed reloads are retried this many times in all, then the restore stops and is recorded
+# as incomplete: a reload that can never succeed mustn't run (and restart FRR) every 30 s forever.
+RELOAD_ATTEMPTS = 5
+# Managed files are small. Anything bigger isn't read: the frr user can write /etc/frr.
+MAX_FILE_BYTES = 4 * 1024 * 1024
+BOOT_ID = "/proc/sys/kernel/random/boot_id"
 
 IFQUERY = "/usr/sbin/ifquery"
 IFRELOAD = "/usr/sbin/ifreload"
@@ -111,21 +118,33 @@ class Runner(Protocol):
 
 
 def run_command(argv: Sequence[str], *, timeout: int = COMMAND_TIMEOUT_SECONDS) -> Result:
-    try:
-        proc = subprocess.run(
-            list(argv),
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"},
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return Result(124, "", f"{argv[0]}: timed out after {timeout}s")
-    except OSError as exc:
-        return Result(127, "", f"{argv[0]}: {exc.strerror}")
-    return Result(proc.returncode, proc.stdout, proc.stderr)
+    """Run a command with no stdin and a clean environment, in its own session.
+
+    Output goes to temporary files, not pipes, so a background process a hook leaves behind (an ifupdown2 post-up,
+    say) can't keep the helper waiting for an end of output that never comes: only the command's own exit counts.
+    """
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        try:
+            proc = subprocess.Popen(
+                list(argv),
+                stdin=subprocess.DEVNULL,
+                stdout=out,
+                stderr=err,
+                env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"},
+                start_new_session=True,
+            )
+        except OSError as exc:
+            return Result(127, "", f"{argv[0]}: {exc.strerror}")
+        try:
+            rc = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(OSError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            return Result(124, "", f"{argv[0]}: timed out after {timeout}s")
+        out.seek(0)
+        err.seek(0)
+        return Result(rc, out.read().decode("utf-8", "replace"), err.read().decode("utf-8", "replace"))
 
 
 def log(message: str) -> None:
@@ -167,6 +186,10 @@ class NotARegularFile(Exception):
     pass
 
 
+class TooLarge(NotARegularFile):
+    pass
+
+
 def fsync_dir(path: Path) -> None:
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -189,7 +212,11 @@ def read_regular(path: Path) -> tuple[bytes, os.stat_result] | None:
         if not stat.S_ISREG(st.st_mode):
             raise NotARegularFile(str(path))
         chunks = []
+        size = 0
         while chunk := os.read(fd, 1 << 20):
+            size += len(chunk)
+            if size > MAX_FILE_BYTES:
+                raise TooLarge(str(path))
             chunks.append(chunk)
         return b"".join(chunks), st
     finally:
@@ -206,15 +233,21 @@ def write_atomic(path: Path, data: bytes, *, mode: int, uid: int, gid: int) -> N
         tmp.unlink()
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
     try:
-        view = memoryview(data)
-        while view:
-            view = view[os.write(fd, view) :]
-        os.fchown(fd, uid, gid)
-        os.fchmod(fd, mode)
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-    os.replace(tmp, path)
+        try:
+            view = memoryview(data)
+            while view:
+                view = view[os.write(fd, view) :]
+            os.fchown(fd, uid, gid)
+            os.fchmod(fd, mode)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp, path)
+    except BaseException:
+        # Don't leave a half-written temp file next to the real one.
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
     fsync_dir(path.parent)
 
 
@@ -272,11 +305,31 @@ def check_run_id(run_id: str) -> str:
     return run_id
 
 
-def armed_run(node: Node) -> str | None:
+def _marker_lines(node: Node) -> list[str]:
     try:
-        return node.marker.read_text(encoding="utf-8", errors="replace").strip() or None
+        return node.marker.read_text(encoding="utf-8", errors="replace").split()
     except FileNotFoundError:
-        return None
+        return []
+
+
+def armed_run(node: Node) -> str | None:
+    """The armed run, from the marker's first line."""
+    lines = _marker_lines(node)
+    return lines[0] if lines else None
+
+
+def boot_id(node: Node) -> str:
+    try:
+        return node.path(BOOT_ID).read_text(encoding="ascii").strip()
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def armed_this_boot(node: Node) -> bool:
+    """Whether the marker was written since the node last booted: its second line is the boot it was armed in."""
+    lines = _marker_lines(node)
+    current = boot_id(node)
+    return len(lines) > 1 and current != "" and lines[1] == current
 
 
 def timer_unit(run_id: str) -> str:
@@ -284,7 +337,17 @@ def timer_unit(run_id: str) -> str:
 
 
 def unit_active(node: Node, unit: str) -> bool:
-    return node.run((SYSTEMCTL, "is-active", "--quiet", unit)).rc == 0
+    """Active, or on its way: a restore unit waiting to retry is `activating`, which `is-active` reports as not."""
+    result = node.run((SYSTEMCTL, "show", "--property=ActiveState", "--value", unit))
+    return result.rc == 0 and result.stdout.strip() in ("active", "activating", "reloading")
+
+
+def failure_record(node: Node, run_id: str) -> dict[str, Any] | None:
+    try:
+        record: dict[str, Any] = json.loads((node.run_dir(run_id) / "restore-failed.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    return record
 
 
 def restore_record(node: Node, run_id: str) -> dict[str, Any] | None:
@@ -351,6 +414,12 @@ def cmd_snapshot(node: Node, run_id: str) -> dict[str, Any]:
         for name in SNAPSHOT_FILES:
             try:
                 found = read_regular(node.path(name))
+            except TooLarge:
+                shutil.rmtree(run_dir)
+                raise HelperError(
+                    f"{name} is larger than {MAX_FILE_BYTES // (1024 * 1024)} MiB. Fix it by hand before applying.",
+                    "too_large",
+                ) from None
             except NotARegularFile:
                 shutil.rmtree(run_dir)
                 raise HelperError(
@@ -404,7 +473,7 @@ def cmd_arm(node: Node, run_id: str, seconds: int) -> dict[str, Any]:
                 f"{RESTORE_SERVICE} isn't enabled. Re-run the bootstrap package's install.sh.", "not_installed"
             )
 
-        write_own(node.marker, f"{run_id}\n".encode())
+        write_own(node.marker, f"{run_id}\n{boot_id(node)}\n".encode())
         started = node.run(
             (
                 SYSTEMD_RUN,
@@ -437,10 +506,11 @@ def cmd_arm(node: Node, run_id: str, seconds: int) -> dict[str, Any]:
 
 
 def cmd_disarm(node: Node, run_id: str) -> dict[str, Any]:
-    """Stop the timer, then remove the marker. Fails if the rollback already fired.
+    """Remove the marker, then stop the timer. Fails if the rollback has fired, even partly.
 
-    It waits for a running restore however long that takes, so it never reports `busy` for a run whose
-    rollback is firing.
+    It waits for a running restore however long that takes, so it never reports `busy` for a run whose rollback is
+    firing. The marker goes first: a helper killed between the two leaves a timer whose restore finds nothing armed
+    and does nothing, rather than a marker that would roll a good apply back at the next boot.
     """
     check_run_id(run_id)
     with locked(node, forever=True):
@@ -453,10 +523,17 @@ def cmd_disarm(node: Node, run_id: str) -> dict[str, Any]:
                     "rollback_fired",
                 )
             raise HelperError(f"Run {run_id} isn't armed.", "not_armed")
+        if (failed := failure_record(node, run_id)) is not None:
+            # The rollback fired and is still retrying: the node is partly on its snapshot. It stays armed.
+            raise HelperError(
+                f"Run {run_id}'s rollback fired at {failed['at']} but hasn't finished ({failed['reason']}). "
+                "It stays armed and keeps retrying.",
+                "rollback_incomplete",
+            )
+        remove_durably(node.marker)
         # A timer that already fired has no unit left to stop; that's fine, the restore it started is
         # waiting for this lock and will see the marker gone.
         node.run((SYSTEMCTL, "stop", f"{timer_unit(run_id)}.timer"))
-        remove_durably(node.marker)
     node.log(f"disarmed {run_id}")
     return {"run": run_id, "armed": False}
 
@@ -489,13 +566,48 @@ def step(node: Node, argv: Sequence[str], *, timeout: int = COMMAND_TIMEOUT_SECO
     return result.rc
 
 
-def cmd_restore(node: Node, run_id: str, trigger: str) -> dict[str, Any]:
-    """Put run's snapshot back. At boot (`boot-restore`) it doesn't reload: the services that follow
-    it start from the restored files. Otherwise it reloads networking, sysctl and FRR the way PVE does.
+def _reload(node: Node, trigger: str) -> dict[str, int]:
+    """Bring the running state in line with the restored files, the way PVE does. At boot only sysctl: the services
+    that follow start from the files."""
+    steps: dict[str, int] = {}
+    if trigger == "boot":
+        # systemd-sysctl.service already applied the broken file before this ran.
+        steps["systemd_sysctl"] = step(node, (SYSTEMD_SYSCTL,))
+        return steps
+    steps["ifreload"] = step(node, (IFRELOAD, "-a"), timeout=RELOAD_TIMEOUT_SECONDS)
+    steps["sysctl"] = step(node, (SYSCTL, "--quiet", "--system"))
+    if unit_active(node, "frr.service"):
+        # PVE's own per-node step: reload, falling back to a restart.
+        steps["frr_reload"] = step(node, (FRR_RELOAD, "--reload", GENERATED_FRR_CONF), timeout=RELOAD_TIMEOUT_SECONDS)
+        if steps["frr_reload"] != 0:
+            steps["frr_restart"] = step(node, (SYSTEMCTL, "restart", "frr.service"), timeout=RELOAD_TIMEOUT_SECONDS)
+    elif node.run((SYSTEMCTL, "is-enabled", "--quiet", "frr.service")).rc == 0:
+        # The bad config may have left FRR failed or start-limited. It's meant to run: start it on the restored file.
+        node.run((SYSTEMCTL, "reset-failed", "frr.service"))
+        steps["frr_start"] = step(node, (SYSTEMCTL, "start", "frr.service"), timeout=RELOAD_TIMEOUT_SECONDS)
+    return steps
 
-    The marker stays until every file is back, so a restore that couldn't write a file fails, and is
-    retried by the timer unit and again at boot. A reload step that fails is recorded but doesn't keep
-    the marker: the files are right, and the next boot starts from them anyway.
+
+def _attempt(node: Node, run_id: str) -> int:
+    """Count this restore attempt durably, and return its number."""
+    path = node.run_dir(run_id) / "attempts"
+    try:
+        previous = int(path.read_text(encoding="ascii"))
+    except (OSError, ValueError):
+        previous = 0
+    with contextlib.suppress(OSError):
+        write_own(path, f"{previous + 1}\n".encode())
+    return previous + 1
+
+
+def cmd_restore(node: Node, run_id: str, trigger: str) -> dict[str, Any]:
+    """Put an armed run's snapshot back, then reload.
+
+    The marker stays until the restore is done, so a failure is retried (the timer unit every 30 s, and the next
+    boot), and `disarm` refuses meanwhile:
+    - a file that couldn't be written fails the attempt, without reloading anything; files are retried for good;
+    - with every file back, failed reloads are retried RELOAD_ATTEMPTS times in all. Then the restore stops, recorded
+      as incomplete, and the marker goes: what's left is the controller's alert and a reboot.
     """
     check_run_id(run_id)
     # The timer and boot restores wait however long it takes: giving up would strand the node.
@@ -510,10 +622,8 @@ def cmd_restore(node: Node, run_id: str, trigger: str) -> dict[str, Any]:
             raise HelperError(f"Run {run_id} isn't armed.", "not_armed")
 
         manifest = load_snapshot(node, run_id)
-        if trigger == "controller":
-            # The timer would find nothing to do, but needn't linger.
-            node.run((SYSTEMCTL, "stop", f"{timer_unit(run_id)}.timer"))
-        node.log(f"restore {run_id} ({trigger}): putting the snapshot back")
+        attempt = _attempt(node, run_id)
+        node.log(f"restore {run_id} ({trigger}, attempt {attempt}): putting the snapshot back")
         files, errors = put_back(node, run_id, manifest)
         # A pending interfaces.new would be promoted over the restored file by the next PVE reload.
         try:
@@ -527,54 +637,57 @@ def cmd_restore(node: Node, run_id: str, trigger: str) -> dict[str, Any]:
         with contextlib.suppress(OSError):
             node.path("/run/network").mkdir(parents=True, exist_ok=True)
 
-        steps: dict[str, int] = {}
-        if trigger == "boot":
-            # systemd-sysctl.service already applied the broken file before this ran.
-            steps["systemd_sysctl"] = step(node, (SYSTEMD_SYSCTL,))
-        else:
-            steps["ifreload"] = step(node, (IFRELOAD, "-a"), timeout=RELOAD_TIMEOUT_SECONDS)
-            steps["sysctl"] = step(node, (SYSCTL, "--quiet", "--system"))
-            if unit_active(node, "frr.service"):
-                # PVE's own per-node step: reload, falling back to a restart.
-                steps["frr_reload"] = step(
-                    node, (FRR_RELOAD, "--reload", GENERATED_FRR_CONF), timeout=RELOAD_TIMEOUT_SECONDS
-                )
-                if steps["frr_reload"] != 0:
-                    steps["frr_restart"] = step(
-                        node, (SYSTEMCTL, "restart", "frr.service"), timeout=RELOAD_TIMEOUT_SECONDS
-                    )
-
-        record = {
+        # Reload only once every file is back: reloading half a snapshot every 30 s helps nothing.
+        steps = {} if errors else _reload(node, trigger)
+        # A failed frr-reload that PVE's fallback restart made good isn't a failure.
+        failed_steps = [
+            name
+            for name, rc in steps.items()
+            if rc != 0 and not (name == "frr_reload" and steps.get("frr_restart") == 0)
+        ]
+        record: dict[str, Any] = {
             "run": run_id,
             "trigger": trigger,
             "at": node.now().isoformat(),
-            "complete": not errors,
+            "attempt": attempt,
             "files": files,
             "errors": errors,
             "steps": steps,
         }
-        record_path = node.run_dir(run_id) / ("restored.json" if not errors else "restore-failed.json")
+        if errors or (failed_steps and attempt < RELOAD_ATTEMPTS):
+            reason = f"couldn't put back {', '.join(errors)}" if errors else f"{', '.join(failed_steps)} failed"
+            record |= {"complete": False, "reason": reason}
+            with contextlib.suppress(OSError):
+                write_own(node.run_dir(run_id) / "restore-failed.json", json.dumps(record, indent=2).encode())
+            node.log(f"restore {run_id} ({trigger}) not finished, still armed: {reason}")
+            raise HelperError(f"Run {run_id}'s restore {reason}. It stays armed and is retried.", "restore_incomplete")
+
+        record["complete"] = not failed_steps
+        if failed_steps:
+            record["reason"] = f"{', '.join(failed_steps)} still failed after {attempt} attempts"
         with contextlib.suppress(OSError):
-            write_own(record_path, json.dumps(record, indent=2).encode())
-        if errors:
-            node.log(f"restore {run_id} ({trigger}) incomplete, still armed: {errors}")
-            raise HelperError(
-                f"Run {run_id}'s restore couldn't put back {', '.join(errors)}. It stays armed and is retried.",
-                "restore_incomplete",
-            )
+            write_own(node.run_dir(run_id) / "restored.json", json.dumps(record, indent=2).encode())
         # Last, so a crash mid-restore restores again at boot.
         remove_durably(node.marker)
-    failed = [name for name, rc in steps.items() if rc != 0]
-    summary = f"{', '.join(files) or 'no changes'}; failed steps: {', '.join(failed) or 'none'}"
+        # Only now: a timer left running would find nothing armed, but a failed restore must keep its retries.
+        node.run((SYSTEMCTL, "stop", f"{timer_unit(run_id)}.timer"))
+    summary = f"{', '.join(files) or 'no changes'}; failed steps: {', '.join(failed_steps) or 'none'}"
     node.log(f"restored {run_id} ({trigger}): {summary}")
     return {"restored": True, **record}
 
 
 def cmd_boot_restore(node: Node) -> dict[str, Any]:
-    """ExecStart of sharpwire-restore.service, which only starts when the marker exists."""
+    """ExecStart of sharpwire-restore.service, which only starts when the marker exists.
+
+    It restores only if the run was armed before this boot. Started again in the same boot (`systemctl isolate`, or
+    a start of sysinit.target), it leaves the armed run to its timer.
+    """
     run_id = armed_run(node)
     if run_id is None:
         return {"restored": False}
+    if armed_this_boot(node):
+        node.log(f"boot-restore: {run_id} was armed in this boot; its timer restores it, not a boot")
+        return {"run": run_id, "restored": False}
     if not RUN_ID.fullmatch(run_id):
         # Nothing to restore from. Leave the marker so the controller sees the node was armed.
         node.log(f"boot-restore: marker names {run_id!r}, which isn't a run ID; not restoring")
@@ -598,15 +711,16 @@ def cmd_status(node: Node, run_id: str | None = None) -> dict[str, Any]:
         "restore_active": armed is not None and unit_active(node, f"{timer_unit(armed)}.service"),
         "restore_service_enabled": node.run((SYSTEMCTL, "is-enabled", "--quiet", RESTORE_SERVICE)).rc == 0,
         "interfaces_new": node.path(INTERFACES_NEW).exists(),
+        # The armed run's rollback fired and is still retrying.
+        "restore_failed": failure_record(node, armed) if armed is not None and RUN_ID.fullmatch(armed) else None,
     }
     if run_id is not None:
         check_run_id(run_id)
-        failed = node.run_dir(run_id) / "restore-failed.json"
         status["run"] = {
             "id": run_id,
             "snapshot": (node.run_dir(run_id) / "manifest.json").exists(),
             "restored": restore_record(node, run_id),
-            "restore_failed": json.loads(failed.read_text(encoding="utf-8")) if failed.exists() else None,
+            "restore_failed": failure_record(node, run_id),
         }
     return status
 
@@ -625,6 +739,8 @@ def sysctl_keys(text: str) -> list[str]:
 def read_file(node: Node, name: str) -> dict[str, Any]:
     try:
         found = read_regular(node.path(name))
+    except TooLarge:
+        return {"present": True, "regular": True, "too_large": True}
     except NotARegularFile:
         return {"present": True, "regular": False}
     if found is None:

@@ -24,7 +24,12 @@ def test_the_restore_unit_runs_before_networking_and_after_sysctl() -> None:
     assert u["Unit"]["DefaultDependencies"] == "no"
     assert u["Unit"]["RequiresMountsFor"] == "/var/lib/sharpwire"
     assert u["Unit"]["ConditionPathExists"] == "/var/lib/sharpwire/armed"
-    assert set(u["Unit"]["After"].split()) == {"local-fs.target", "systemd-sysctl.service", "pvenetcommit.service"}
+    assert set(u["Unit"]["After"].split()) == {
+        "local-fs.target",
+        "systemd-sysctl.service",
+        "pvenetcommit.service",
+        "systemd-journald.socket",
+    }
     assert set(u["Unit"]["Before"].split()) == {
         "network-pre.target",
         "networking.service",

@@ -7,7 +7,8 @@ Documentation=file:///usr/local/sbin/sharpwire-node
 DefaultDependencies=no
 RequiresMountsFor=/var/lib/sharpwire
 ConditionPathExists=/var/lib/sharpwire/armed
-After=local-fs.target systemd-sysctl.service pvenetcommit.service
+# After the journal's socket too, so what it logs this early isn't lost.
+After=local-fs.target systemd-sysctl.service pvenetcommit.service systemd-journald.socket
 Before=network-pre.target networking.service frr.service pve-sdn-commit.service pve-cluster.service corosync.service shutdown.target
 Wants=network-pre.target
 # DefaultDependencies=no drops this and Before=shutdown.target; a restore must never run into a shutdown.

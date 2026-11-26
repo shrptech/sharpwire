@@ -88,13 +88,14 @@ systemctl daemon-reload
 systemctl reenable --quiet sharpwire-restore.service
 
 if [ -n "$key" ]; then
-  home=$(getent passwd "$user" | cut -d: -f6)
-  install -d -m 0700 -o "$user" -g "$user" "$home/.ssh"
-  # Built in root's temp file, then installed: root never writes through a path in the user's directory.
+  # Written as the sharpwire user, never as root: that account can replace anything in its own home, a symlinked
+  # ~/.ssh included, and root writing there would follow it.
+  # The root shell opens the key file for the user's stdin, so it stays root's own.
   printf 'restrict,from="%s" %s\n' "$from" "$key" > "$keyfile"
-  rm -f "$home/.ssh/authorized_keys.new"
-  install -m 0600 -o "$user" -g "$user" "$keyfile" "$home/.ssh/authorized_keys.new"
-  mv -f "$home/.ssh/authorized_keys.new" "$home/.ssh/authorized_keys"
+  home=$(getent passwd "$user" | cut -d: -f6)
+  runuser -u "$user" -- sh -c 'umask 077 && mkdir -p "$1/.ssh" && cat > "$1/.ssh/authorized_keys.new" \
+    && mv -f "$1/.ssh/authorized_keys.new" "$1/.ssh/authorized_keys"' sh "$home" < "$keyfile" \
+    || die "couldn't write the sharpwire user's authorized_keys."
 fi
 
 home=$(getent passwd "$user" | cut -d: -f6)
