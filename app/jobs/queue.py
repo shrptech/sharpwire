@@ -53,6 +53,11 @@ async def claim(session: AsyncSession, lease_seconds: float) -> Job | None:
 
 
 async def finish(session: AsyncSession, job: Job, error: str | None = None) -> None:
+    """Record how a running job ended. One whose lease ran out was already failed by another worker's tick, and
+    another run may be under way: that record stands.
+    """
+    if job.status != "running":
+        return
     job.status = "failed" if error else "done"
     job.error = error
     job.finished_at = datetime.now(UTC)
@@ -67,10 +72,22 @@ async def expire_leases(session: AsyncSession) -> int:
         update(Job)
         .where(Job.status == "running", Job.lease_until < now)
         .values(
-            status="failed", error="The worker running this job stopped. It runs again on schedule.", finished_at=now
+            status="failed",
+            error="The worker running this job stopped. It runs again on schedule.",
+            finished_at=now,
+            lease_until=None,
         )
     )
     return int(getattr(result, "rowcount", 0) or 0)
+
+
+async def renew(session: AsyncSession, job_id: uuid.UUID, lease_seconds: float) -> None:
+    """Extend a running job's lease, so a long run isn't taken for a dead worker's."""
+    await session.execute(
+        update(Job)
+        .where(Job.id == job_id, Job.status == "running")
+        .values(lease_until=datetime.now(UTC) + timedelta(seconds=lease_seconds))
+    )
 
 
 async def last_created(session: AsyncSession, kind: JobKind) -> datetime | None:

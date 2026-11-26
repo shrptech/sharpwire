@@ -107,3 +107,26 @@ async def test_an_unsigned_or_wrongly_signed_call_is_refused(
         assert response.status_code == 401 and response.json()["error_code"] == "bad_signature"
     async with session_factory() as s:
         assert (await s.scalars(select(Job))).all() == []
+
+
+async def test_a_non_ascii_signature_is_refused_not_a_500(api: httpx.AsyncClient) -> None:
+    response = await api.post(
+        "/hooks/netbox", content=b"{}", headers={b"X-Hook-Signature": ("é" * 128).encode("latin-1")}
+    )
+    assert response.status_code == 401 and response.json()["error_code"] == "bad_signature"
+
+
+async def test_a_refusal_names_the_scheme_and_bad_input_keeps_the_error_shape(api: httpx.AsyncClient) -> None:
+    refused = await api.get("/api/plans")
+    assert refused.headers["WWW-Authenticate"] == "Bearer"
+    invalid = await api.get("/api/plans", params={"status": "bogus"}, headers=TOKEN)
+    assert invalid.status_code == 422
+    body = invalid.json()
+    assert body["error_code"] == "invalid_request" and body["detail"].startswith(
+        "The request isn't valid: query.status"
+    )
+
+
+async def test_the_schema_isnt_served(api: httpx.AsyncClient) -> None:
+    for path in ("/openapi.json", "/docs", "/redoc"):
+        assert (await api.get(path)).status_code == 404

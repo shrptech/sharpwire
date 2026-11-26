@@ -9,8 +9,10 @@ reconcile join the queued one, and SKIP LOCKED keeps them off one another's jobs
 
 import asyncio
 import logging
-from datetime import UTC, datetime, timedelta
+import uuid
+from datetime import timedelta
 
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings, get_settings
@@ -26,26 +28,53 @@ TICK_SECONDS = 15
 IDLE_SECONDS = 1
 
 
+# The scheduler's transaction lock ('tick'), so two workers' ticks can't both find a reconcile due and queue two.
+TICK_LOCK = 0x7469636B
+
+
 async def tick(session_factory: async_sessionmaker[AsyncSession], settings: Settings) -> None:
-    now = datetime.now(UTC)
-    interval = timedelta(seconds=settings.reconcile_interval_seconds)
     async with session_factory.begin() as session:
+        await session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": TICK_LOCK})
+        # The database's clock, the one created_at and the other timestamps were written with.
+        now = await session.scalar(select(func.now()))
+        assert now is not None
+        interval = timedelta(seconds=settings.reconcile_interval_seconds)
         await queue.expire_leases(session)
         last = await queue.last_created(session, "reconcile")
         if last is None or last <= now - interval:
             await queue.enqueue(session, "reconcile")
         cutoff = now - interval * settings.reconcile_overdue_intervals
+        already = {a.dedup_key for a in await alerts.open_alerts(session, "target:")}
         for target in await targets.overdue(session, cutoff):
+            key = f"target:{target.name}:overdue"
+            if key in already:
+                # Still overdue: the open alert says so, and its count stays the number of times it was raised.
+                continue
             since = target.last_reconciled_at
-            when = f"since {since:%Y-%m-%d %H:%M} UTC" if since else "ever"
+            when = f"since {since:%Y-%m-%d %H:%M} UTC" if since else "since it became managed"
             await alerts.raise_alert(
                 session,
-                dedup_key=f"target:{target.name}:overdue",
-                topic=f"target:{target.name}:overdue",
+                dedup_key=key,
+                topic=key,
                 severity="critical",
                 message=f"{target.name} hasn't been planned {when}, so drift on it would go unseen.",
                 target_id=target.id,
             )
+
+
+async def _finish(session_factory: async_sessionmaker[AsyncSession], job_id: uuid.UUID, error: str | None) -> Job:
+    async with session_factory.begin() as session:
+        current = await session.get(Job, job_id, with_for_update=True)
+        assert current is not None
+        await queue.finish(session, current, error)
+        return current
+
+
+async def _keep_lease(session_factory: async_sessionmaker[AsyncSession], job_id: uuid.UUID, lease: float) -> None:
+    while True:
+        await asyncio.sleep(lease / 3)
+        async with session_factory.begin() as session:
+            await queue.renew(session, job_id, lease)
 
 
 async def run_one(
@@ -56,20 +85,24 @@ async def run_one(
         job = await queue.claim(session, settings.job_lease_seconds)
     if job is None:
         return None
+    keeper = asyncio.create_task(_keep_lease(session_factory, job.id, settings.job_lease_seconds))
     error: str | None = None
     try:
         counts = await reconcile_job.run(session_factory, source)
         logger.info("reconcile %s: %s", job.id, counts)
     except reconcile_job.ReconcileFailed as exc:
         error = exc.detail
+    except asyncio.CancelledError:
+        # The worker is stopping (a deploy): record it now, rather than leave it running until its lease runs out.
+        stopped = "The worker stopped during the run. It runs again on schedule."
+        await asyncio.shield(_finish(session_factory, job.id, stopped))
+        raise
     except Exception:
         logger.exception("Job %s failed", job.id)
         error = "The job failed unexpectedly. See the worker's log."
-    async with session_factory.begin() as session:
-        current = await session.get(Job, job.id, with_for_update=True)
-        assert current is not None
-        await queue.finish(session, current, error)
-    return current
+    finally:
+        keeper.cancel()
+    return await _finish(session_factory, job.id, error)
 
 
 async def main() -> None:

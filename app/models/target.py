@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -27,6 +27,10 @@ class Target(UUIDPrimaryKeyMixin, CreatedAtMixin, UpdatedAtMixin, Base):
     managed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     # Whether it's in the intent the last reconcile built.
     present: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # When it last became planned (present and managed): "overdue" counts from here for a target that came back.
+    planned_since: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
     # The last reconcile that read the target and planned it, and why the latest one couldn't, if it couldn't.
     last_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(String)

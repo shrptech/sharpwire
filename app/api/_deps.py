@@ -29,4 +29,9 @@ async def require_token(
 ) -> None:
     """The read-only API's bearer token (API_TOKEN), until the operator UI's Kanidm login (step 5)."""
     if credentials is None or not hmac.compare_digest(credentials.credentials.encode(), settings.api_token.encode()):
-        raise AppHTTPException(401, "Send the API token as a Bearer token.", error_code="unauthorized")
+        raise AppHTTPException(
+            401,
+            "Send the API token as a Bearer token.",
+            error_code="unauthorized",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

@@ -23,7 +23,8 @@ async def netbox_changed(
 ) -> dict[str, bool]:
     body = await request.body()
     expected = hmac.new(settings.netbox_webhook_secret.encode(), body, hashlib.sha512).hexdigest()
-    if not hmac.compare_digest(expected, x_hook_signature.lower()):
+    # Bytes, not str: compare_digest refuses non-ASCII str, and a header is the caller's to choose.
+    if not hmac.compare_digest(expected.encode(), x_hook_signature.lower().encode("utf-8", "replace")):
         raise AppHTTPException(
             401, "The webhook signature doesn't match. Check its secret in NetBox.", error_code="bad_signature"
         )

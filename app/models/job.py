@@ -38,6 +38,7 @@ class Job(UUIDPrimaryKeyMixin, CreatedAtMixin, UpdatedAtMixin, Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # A running job whose lease has passed belongs to a worker that died; it's queued again.
+    # A running job whose lease has passed belongs to a worker that died: it's failed, and the schedule queues the work
+    # again. A live worker renews the lease while the job runs.
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(String)

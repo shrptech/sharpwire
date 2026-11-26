@@ -5,7 +5,8 @@ from app.errors import register_error_handlers
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="sharpwire")
+    # No /docs or /openapi.json: the API is behind a token, and its schema shouldn't be served without one.
+    app = FastAPI(title="sharpwire", docs_url=None, redoc_url=None, openapi_url=None)
     register_error_handlers(app)
     app.include_router(health.router)
     for module in (targets, plans, alerts, hooks):

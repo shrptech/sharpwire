@@ -22,7 +22,7 @@ Targets accept API and SSH connections only from the controller's address on the
 
 ## Alerts
 
-v1 stores alerts in an `alerts` table and shows them in the UI. Until the UI arrives in step 5, the read-only JSON API serves them (`GET /api/alerts`, with plans and targets), behind a bearer token (`API_TOKEN`). Each alert has:
+v1 stores alerts in an `alerts` table and shows them in the UI. Until the UI arrives in step 5, the read-only JSON API serves them (`GET /api/alerts`, with plans and targets), behind a bearer token (`API_TOKEN`, at least 16 characters, like the webhook's `NETBOX_WEBHOOK_SECRET`). The API serves no schema or docs pages without the token, so none at all. Each alert has:
 - a severity, target, related plan or run, and message;
 - a dedup key and topic, following sharpstack's outbox pattern, so a repeat updates the open alert;
 - automatic resolution once the condition clears;

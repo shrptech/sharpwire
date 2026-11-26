@@ -1,13 +1,15 @@
 """A reconcile of the example network, from its NetBox snapshot, against simulated and captured devices."""
 
+import asyncio
 import copy
 import json
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import get_settings
@@ -228,8 +230,156 @@ async def test_a_target_not_planned_for_a_while_is_overdue(session_factory: asyn
     assert "target:core-a:overdue" in topics
     async with session_factory() as s:
         overdue = next(a for a in await alerts.open_alerts(s) if a.topic.endswith("overdue"))
-    assert overdue.severity == "critical" and "hasn't been planned ever" in overdue.message
+    assert overdue.severity == "critical" and "hasn't been planned since it became managed" in overdue.message
 
     devices.down.clear()
     await reconcile.run(session_factory, sources(devices))
     assert (await state(session_factory))[2] == []
+
+
+async def test_a_target_whose_plan_crashes_doesnt_stop_the_others(
+    session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = reconcile._plan
+
+    def crash_on_core_a(network: Any, target: Target, live: LiveState) -> Any:
+        if target.name == "core-a":
+            raise AttributeError("'list' object has no attribute 'get'")
+        return real(network, target, live)
+
+    monkeypatch.setattr(reconcile, "_plan", crash_on_core_a)
+    counts = await reconcile.run(session_factory, sources(Devices()))
+
+    targets, _, topics = await state(session_factory)
+    assert counts == {"planned": 3, "drifted": 0, "unreadable": 1}
+    assert topics == ["target:core-a:read"]
+    assert targets["core-a"].last_error == "planning it failed unexpectedly. See the worker's log."
+    assert targets["core-b"].last_reconciled_at is not None
+
+
+async def test_two_runs_at_once_take_turns(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    devices = Devices()
+    inside = 0
+    overlap = False
+    real = devices.read
+
+    async def slow_read(target: Target, menus: Sequence[str]) -> LiveState:
+        nonlocal inside, overlap
+        inside += 1
+        overlap |= inside > 1
+        await asyncio.sleep(0.02)
+        inside -= 1
+        return await real(target, menus)
+
+    devices.read = slow_read  # type: ignore[method-assign]
+    await asyncio.gather(
+        reconcile.run(session_factory, sources(devices)), reconcile.run(session_factory, sources(devices))
+    )
+    assert not overlap
+    assert len(devices.reads) == 8
+
+
+async def test_a_device_removed_from_netbox_is_no_longer_present(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    from app.intent.models import Network
+    from app.services import targets as target_service
+
+    async with session_factory.begin() as s:
+        await target_service.sync(s, NETWORK)
+    smaller = Network.model_construct(
+        fabric=NETWORK.fabric, cores=NETWORK.cores[:1], leafs=NETWORK.leafs, nodes=NETWORK.nodes
+    )
+    async with session_factory.begin() as s:
+        present = await target_service.sync(s, smaller)
+        gone = await target_service.not_planned(s)
+    assert "core-b" not in {t.name for t in present}
+    assert [t.name for t in gone] == ["core-b"] and gone[0].present is False
+
+
+async def test_the_scheduler_waits_an_interval_after_a_run_and_then_queues_again(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    settings = get_settings()
+    await worker.tick(session_factory, settings)
+    await worker.run_one(session_factory, settings, sources(Devices()))
+    await worker.tick(session_factory, settings)
+    async with session_factory() as s:
+        assert [j.status for j in await s.scalars(select(Job))] == ["done"]
+
+    async with session_factory.begin() as s:
+        await s.execute(
+            update(Job).values(
+                created_at=datetime.now(UTC) - timedelta(seconds=settings.reconcile_interval_seconds + 5)
+            )
+        )
+    await worker.tick(session_factory, settings)
+    async with session_factory() as s:
+        assert sorted(j.status for j in await s.scalars(select(Job))) == ["done", "queued"]
+
+
+async def test_overdue_is_raised_once_and_a_returning_target_gets_its_grace_again(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    devices = Devices()
+    devices.down.add("core-a")
+    await reconcile.run(session_factory, sources(devices))
+    async with session_factory.begin() as s:
+        await s.execute(update(Target).values(planned_since=datetime.now(UTC) - timedelta(days=1)))
+    for _ in range(3):
+        await worker.tick(session_factory, get_settings())
+    async with session_factory() as s:
+        (overdue,) = [a for a in await alerts.open_alerts(s) if a.topic.endswith("overdue")]
+    assert overdue.count == 1
+
+    # Unmanaged for a long while, then managed again: overdue counts from its return, not from long ago.
+    snapshot = netbox.load("example_network")
+    for device in snapshot["device_list"]:
+        if device["name"] == "core-a":
+            device["custom_fields"] = {**(device.get("custom_fields") or {}), "sharpwire_managed": False}
+    await reconcile.run(session_factory, sources(devices, snapshot=snapshot))
+    await reconcile.run(session_factory, sources(devices))
+    await worker.tick(session_factory, get_settings())
+    _, _, topics = await state(session_factory)
+    assert topics == ["target:core-a:read"]
+
+
+async def test_a_long_job_keeps_its_lease_and_a_stopped_worker_records_its_job(
+    session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = get_settings().model_copy(update={"job_lease_seconds": 0.3})
+    started = asyncio.Event()
+
+    async def slow_run(*_args: Any) -> dict[str, int]:
+        started.set()
+        # Past the original lease, another worker's tick looks for dead workers' jobs.
+        await asyncio.sleep(0.5)
+        await worker.tick(session_factory, settings)
+        await asyncio.sleep(0.1)
+        return {}
+
+    monkeypatch.setattr(reconcile, "run", slow_run)
+    await worker.tick(session_factory, settings)
+    job = await worker.run_one(session_factory, settings, sources(Devices()))
+    # Longer than its lease, but renewed meanwhile: a tick during the run didn't take it for a dead worker's.
+    assert job is not None and job.status == "done"
+
+    async def hang(*_args: Any) -> dict[str, int]:
+        started.set()
+        await asyncio.sleep(60)
+        return {}
+
+    monkeypatch.setattr(reconcile, "run", hang)
+    async with session_factory.begin() as s:
+        from app.jobs import queue
+
+        await queue.enqueue(s, "reconcile")
+    started.clear()
+    task = asyncio.create_task(worker.run_one(session_factory, settings, sources(Devices())))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    async with session_factory() as s:
+        stopped = (await s.scalars(select(Job).where(Job.status == "failed"))).one()
+    assert stopped.error == "The worker stopped during the run. It runs again on schedule."

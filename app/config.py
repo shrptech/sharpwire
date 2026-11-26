@@ -1,6 +1,7 @@
 import os
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,7 +22,7 @@ class Settings(BaseSettings):
     netbox_url: str
     netbox_token: str
     # Shared with NetBox's webhook for the event rules, which signs every call with it (X-Hook-Signature).
-    netbox_webhook_secret: str
+    netbox_webhook_secret: str = Field(min_length=16)
 
     # The RouterOS service account, the same on every core and leaf (docs/07-security-and-observability.md), and the
     # CA the bootstraps issued the devices' certificates from.
@@ -30,7 +31,7 @@ class Settings(BaseSettings):
     routeros_ca_file: str
 
     # The read-only JSON API's bearer token, until the operator UI's Kanidm login (step 5).
-    api_token: str
+    api_token: str = Field(min_length=16)
 
     # Every target is planned this often (docs/06-drift-and-approvals.md), and a NetBox change waits this long for
     # the changes that follow it before the reconcile it triggers runs.
@@ -38,7 +39,8 @@ class Settings(BaseSettings):
     netbox_debounce_seconds: int = 10
     # A target that hasn't been planned in this many intervals raises "reconcile overdue".
     reconcile_overdue_intervals: int = 3
-    # How long a worker may hold a job before it's considered dead and the job is queued again.
+    # How long a job's lease lasts. A live worker renews it while the job runs; one not renewed in time belongs to a
+    # dead worker, and the job is failed (the schedule queues the work again).
     job_lease_seconds: int = 900
 
 

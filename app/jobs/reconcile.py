@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from ipaddress import ip_address
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
@@ -78,6 +79,21 @@ def _plan(network: Network, target: Target, live: LiveState) -> PlanDraft:
 MENUS = {"core": CORE_MENUS, "leaf": LEAF_MENUS}
 
 
+async def _unreadable(session_factory: async_sessionmaker[AsyncSession], target: Target, detail: str) -> None:
+    async with session_factory.begin() as session:
+        current = await session.get(Target, target.id, with_for_update=True)
+        assert current is not None
+        current.last_error = detail
+        await alerts.raise_alert(
+            session,
+            dedup_key=_topic(target, "read"),
+            topic=_topic(target, "read"),
+            severity="warning",
+            message=f"sharpwire couldn't plan {target.name}: {detail}",
+            target_id=target.id,
+        )
+
+
 def _topic(target: Target, what: str) -> str:
     return f"target:{target.name}:{what}"
 
@@ -102,8 +118,29 @@ async def _drift(session: AsyncSession, target: Target, draft: PlanDraft, change
     )
 
 
+# The session-level advisory lock one reconcile holds for its whole run ('reco').
+RUN_LOCK = 0x7265636F
+
+
 async def run(session_factory: async_sessionmaker[AsyncSession], source: Sources) -> dict[str, int]:
-    """One reconcile of the whole fabric. Returns counts for the job's log line."""
+    """One reconcile of the whole fabric, with no other running. Returns counts for the job's log line.
+
+    Runs are serialised on a session-level advisory lock, held on a connection of its own: two workers running at
+    once would otherwise let an older run, reading older intent, overwrite a newer run's plans. A run waits for the
+    one before it and only then reads NetBox, so the last run to finish has the newest intent.
+    """
+    engine = session_factory.kw["bind"]
+    async with engine.connect() as lock:
+        await lock.execute(text("SELECT pg_advisory_lock(:key)"), {"key": RUN_LOCK})
+        await lock.commit()
+        try:
+            return await _run(session_factory, source)
+        finally:
+            await lock.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": RUN_LOCK})
+            await lock.commit()
+
+
+async def _run(session_factory: async_sessionmaker[AsyncSession], source: Sources) -> dict[str, int]:
     change_id = await source.change_id()
     try:
         network = build_network(await source.snapshot())
@@ -134,19 +171,14 @@ async def run(session_factory: async_sessionmaker[AsyncSession], source: Sources
         except (RouterOSError, LiveStateError) as exc:
             detail = getattr(exc, "detail", None) or " ".join(getattr(exc, "problems", [])) or str(exc)
             logger.warning("Reconcile of %s failed: %s", target.name, detail)
+            await _unreadable(session_factory, target, detail)
             counts["unreadable"] += 1
-            async with session_factory.begin() as session:
-                current = await session.get(Target, target.id, with_for_update=True)
-                assert current is not None
-                current.last_error = detail
-                await alerts.raise_alert(
-                    session,
-                    dedup_key=_topic(target, "read"),
-                    topic=_topic(target, "read"),
-                    severity="warning",
-                    message=f"sharpwire couldn't plan {target.name}: {detail}",
-                    target_id=target.id,
-                )
+            continue
+        except Exception:
+            # Anything else (a driver bug, a device answering nonsense) is this target's problem, not the run's.
+            logger.exception("Reconcile of %s failed unexpectedly", target.name)
+            await _unreadable(session_factory, target, "planning it failed unexpectedly. See the worker's log.")
+            counts["unreadable"] += 1
             continue
         async with session_factory.begin() as session:
             current = await session.get(Target, target.id, with_for_update=True)
