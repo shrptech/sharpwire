@@ -101,7 +101,7 @@ Some changes are legal but risky, so the plan shows them as **warnings** that th
 
 Warnings are raised for changes to:
 - the leaf MLAG config, or the peer-link's VLANs;
-- a core's BGP instance (ASN, router-id), or a core's or leaf's mgmt VLAN interface MTU (anything else on it is a [hard guard](03-pipeline-and-validation.md#hard-guards));
+- a core's BGP instance (ASN, router-id), or anything on a core's or leaf's mgmt path that isn't a [hard guard](03-pipeline-and-validation.md#hard-guards) (MTUs, LACP rate);
 - a node's `bond0`/`bond0.10` attributes outside the hard guard (MTU, bond options, `egress-qos-map`);
 - a node's `dummy0`, ASN or router-id;
 - any corosync setting.

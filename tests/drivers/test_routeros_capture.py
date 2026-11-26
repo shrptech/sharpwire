@@ -6,6 +6,7 @@ the core's SFP+ ports; the capture maps them back.
 
 import copy
 import json
+import ssl
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -21,6 +22,7 @@ from app.drivers.routeros.client import (
     version_supported,
 )
 from app.drivers.routeros.plan import CORE_MENUS, fingerprint, plan_core
+from tests.drivers.routeros_device import link
 from tests.fixtures.example_network import example_network
 
 CAPTURE = json.loads((Path(__file__).parent.parent / "fixtures" / "routeros" / "core-a.live.json").read_text())
@@ -55,13 +57,29 @@ def test_a_freshly_applied_core_differs_only_where_a_chr_cant_follow() -> None:
     assert [(u.path, u.key) for u in draft.unmanaged] == [
         ("ip/address", {"address": "192.168.88.1/24", "interface": "ether1"})
     ]
-    assert draft.guard_violations == () and draft.warnings == ()
+    # The SFP+ ports carry the mgmt VLAN, so an MTU-class change on them is a warning, not a guard.
+    assert draft.guard_violations == ()
+    assert [w.message for w in draft.warnings] == [
+        "core-a: the mgmt path changes: the port sfp-sfpplus1, the port sfp-sfpplus2."
+    ]
 
 
 def test_the_capture_has_dynamic_rows_and_the_diff_ignores_them() -> None:
     rows = live()["ipv6/address"]
     assert any(r.get("dynamic") == "true" for r in rows)
-    assert all(not op.path.startswith("ipv6") for op in plan_core(NETWORK, CORE_A, live()).ops)
+    draft = plan_core(NETWORK, CORE_A, live())
+    assert all(not op.path.startswith("ipv6") for op in draft.ops)
+    # Neither changed nor reported: the dynamic link-locals aren't unmanaged rows either.
+    assert all(u.path != "ipv6/address" for u in draft.unmanaged)
+
+
+def test_on_a_real_device_the_last_rule_has_no_nextid() -> None:
+    # RouterOS 7.25.1 leaves .nextid out on the last row; the order must still come from the chain, not the listing.
+    rules = live()["routing/filter/rule"]
+    assert ".nextid" not in rules[-1] and all(".nextid" in r for r in rules[:-1])
+    from app.drivers.routeros.diff import linked_order
+
+    assert linked_order(list(reversed(rules))) == rules
 
 
 def test_real_drift_on_the_capture() -> None:
@@ -69,6 +87,7 @@ def test_real_drift_on_the_capture() -> None:
     by(state["routing/bgp/connection"], name="pub6")["use-bfd"] = "false"
     by(state["routing/bfd/configuration"], interfaces="vlan101,vlan300")["multiplier"] = "5"
     state["routing/filter/rule"] = [r for r in state["routing/filter/rule"] if r["chain"] != "ul-in-pve3"]
+    link(state)
 
     draft = plan_core(NETWORK, CORE_A, state)
 
@@ -117,7 +136,9 @@ def device(
 
 
 def client(transport: httpx.MockTransport) -> RouterOSClient:
-    return RouterOSClient("https://[2001:db8:100::2]:443/rest", "sharpwire", "secret", True, transport=transport)
+    return RouterOSClient(
+        "https://[2001:db8:100::2]:443/rest", "sharpwire", "secret", ssl.create_default_context(), transport=transport
+    )
 
 
 async def test_the_client_reads_what_the_diff_needs() -> None:
@@ -180,7 +201,29 @@ def test_base_urls_bracket_ipv6() -> None:
     assert base_url(ip_address("192.0.2.1"), 8443) == "https://192.0.2.1:8443/rest"
 
 
-def test_tls_verification_must_be_chosen_explicitly() -> None:
-    import inspect
+def test_tls_verification_cant_be_turned_off_and_proxies_are_ignored() -> None:
+    with pytest.raises(TypeError):
+        RouterOSClient("https://192.0.2.1/rest", "u", "p", False)  # type: ignore[arg-type]
+    c = client(device(live()))
+    assert c._http.trust_env is False
 
-    assert inspect.signature(RouterOSClient).parameters["verify"].default is inspect.Parameter.empty
+
+@pytest.mark.parametrize(
+    ("path", "response", "message"),
+    [
+        ("system/resource", httpx.Response(200, text="<html>login</html>"), "something other than RouterOS JSON"),
+        ("system/resource", httpx.Response(200, json=[]), "didn't say which RouterOS"),
+        ("system/resource", httpx.Response(302, headers={"location": "/x"}), "something other than RouterOS JSON"),
+        (
+            "routing/bgp/connection",
+            httpx.Response(400, json=["odd"]),
+            "failed to read /routing/bgp/connection: HTTP 400",
+        ),
+        ("routing/bgp/connection", httpx.Response(200, json={"rows": [1]}), "a shape RouterOS doesn't use"),
+        ("routing/bgp/connection", httpx.Response(200, json=[{"name": 5}]), "a shape RouterOS doesn't use"),
+    ],
+)
+async def test_unexpected_answers_are_read_errors(path: str, response: httpx.Response, message: str) -> None:
+    async with client(device(live(), fail={path: response})) as c:
+        with pytest.raises(RouterOSError, match=message):
+            await c.read(CORE_MENUS)

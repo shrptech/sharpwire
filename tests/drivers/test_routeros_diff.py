@@ -78,7 +78,8 @@ def test_equal_values_written_differently_are_in_sync() -> None:
 def test_dynamic_rows_are_invisible() -> None:
     live = core_live()
     live["ipv6/address"].append({".id": "*99", "address": "fe80::1/64", "interface": "vlan101", "dynamic": "true"})
-    assert plan_core(NETWORK, CORE_A, live).empty
+    draft = plan_core(NETWORK, CORE_A, live)
+    assert draft.empty and draft.unmanaged == ()
 
 
 def test_the_order_comes_from_nextid_not_the_listing() -> None:
@@ -166,17 +167,125 @@ def test_a_hand_bootstrapped_row_is_adopted_without_a_guard_or_warning() -> None
     assert_converges(draft, NETWORK, live)
 
 
-def test_a_duplicate_of_an_owned_rule_is_removed() -> None:
+def test_duplicate_owned_rules_stop_the_plan() -> None:
+    # RouterOS accepts duplicate comments. An op names a row by key only, so it couldn't say which one it means:
+    # removing "the" duplicate could remove the good rule and keep a bad one.
     live = core_live()
     reject = row(live, "routing/filter/rule", comment="sharpwire:ul-out:reject")
-    live["routing/filter/rule"].append({**reject, ".id": "*92"})
+    live["routing/filter/rule"].append({**reject, ".id": "*92", "rule": "accept"})
+    link(live)
+
+    with pytest.raises(LiveStateError) as exc:
+        plan_core(NETWORK, CORE_A, live)
+    assert exc.value.problems == [
+        "The device has 2 /routing/filter/rule rows with chain=ul-out comment=sharpwire:ul-out:reject. "
+        "Remove the extras by hand: a plan can't tell them apart."
+    ]
+
+
+def test_duplicate_rows_matching_a_rendered_key_stop_the_plan_even_unmarked() -> None:
+    live = core_live()
+    bfd = row(live, "routing/bfd/configuration", interfaces="vlan101,vlan300")
+    del bfd["comment"]
+    live["routing/bfd/configuration"].append({**bfd, ".id": "*93"})
+    with pytest.raises(LiveStateError, match="2 /routing/bfd/configuration rows"):
+        plan_core(NETWORK, CORE_A, live)
+
+
+def test_duplicate_hand_made_rows_are_just_unmanaged() -> None:
+    live = core_live()
+    isp = {"name": "isp1", "remote.as": "64500"}
+    live["routing/bgp/connection"] += [{".id": "*94", **isp}, {".id": "*95", **isp}]
+    draft = plan_core(NETWORK, CORE_A, live)
+    assert draft.empty
+    assert [u.key for u in draft.unmanaged] == [{"name": "isp1"}, {"name": "isp1"}]
+
+
+def test_a_comment_merely_starting_with_sharpwire_isnt_ownership() -> None:
+    live = core_live()
+    live["routing/bgp/connection"].append({".id": "*96", "name": "isp1", "comment": "sharpwire: do not touch"})
+    draft = plan_core(NETWORK, CORE_A, live)
+    assert draft.empty and [u.key for u in draft.unmanaged] == [{"name": "isp1"}]
+
+
+def test_a_rule_marked_for_another_chain_isnt_owned_in_this_one() -> None:
+    live = core_live()
+    live["routing/filter/rule"].append(
+        {".id": "*97", "chain": "isp-in", "rule": "accept", "comment": "sharpwire:pub-in:accept-x"}
+    )
+    link(live)
+    draft = plan_core(NETWORK, CORE_A, live)
+    assert draft.empty and [u.path for u in draft.unmanaged] == ["routing/filter/rule"]
+
+
+def test_a_hand_made_rule_in_a_sharpwire_chain_stops_the_plan() -> None:
+    live = core_live()
+    rules = live["routing/filter/rule"]
+    first_pub = next(i for i, r in enumerate(rules) if r["chain"] == "pub-in")
+    rules.insert(first_pub, {".id": "*98", "chain": "pub-in", "rule": "if (dst in 203.0.113.0/24) { accept }"})
+    link(live)
+    with pytest.raises(LiveStateError) as exc:
+        plan_core(NETWORK, CORE_A, live)
+    assert exc.value.problems == [
+        "The device has a rule sharpwire didn't make in its chain pub-in ('if (dst in 203.0.113.0/24) { accept }'). "
+        "Move it to another chain or remove it."
+    ]
+
+
+def test_an_unreadable_filter_order_stops_the_plan() -> None:
+    live = core_live()
+    live["routing/filter/rule"][3][".nextid"] = "*1"  # a loop back to the first rule
+    with pytest.raises(LiveStateError, match=r"couldn't be read from \.nextid"):
+        plan_core(NETWORK, CORE_A, live)
+
+
+def test_a_port_another_bond_holds_stops_the_plan() -> None:
+    live = core_live()
+    live["interface/bonding"] = [
+        {".id": "*99", "name": "bond-old", "slaves": "sfp-sfpplus1,sfp-sfpplus2", "comment": "sharpwire"}
+    ]
+    with pytest.raises(LiveStateError) as exc:
+        plan_core(NETWORK, CORE_A, live)
+    assert exc.value.problems == [
+        "sfp-sfpplus1, sfp-sfpplus2 are in bond bond-old on the device, but NetBox puts them in bond-leafs. Move by hand first."
+    ]
+
+
+def test_an_interface_in_another_bridge_or_a_vlan_under_another_name_stops_the_plan() -> None:
+    live = leaf_live()
+    row(live, "interface/bridge/port", interface="bond-pve1")["bridge"] = "bridge-old"
+    row(live, "interface/vlan", name="mgmt")["name"] = "vlan10"
+    with pytest.raises(LiveStateError) as exc:
+        plan_leaf(NETWORK, LEAF_A, live)
+    assert exc.value.problems == [
+        "bond-pve1 is a port of bridge bridge-old on the device, but NetBox puts it in bridge. Move it by hand first.",
+        "VLAN 10 on bridge is vlan10 on the device, but mgmt in NetBox. Rename it by hand first.",
+    ]
+
+
+def test_an_owned_routing_row_missing_its_key_still_plans_and_inverts() -> None:
+    # Routing menus leave out a field never written, keys included.
+    live = core_live()
+    live["routing/bfd/configuration"].append({".id": "*9A", "comment": "sharpwire", "min-rx": "300ms"})
+    draft = plan_core(NETWORK, CORE_A, live)
+    assert [op.describe() for op in draft.ops] == ['- /routing/bfd/configuration interfaces=""']
+    assert_converges(draft, NETWORK, live)
+
+
+def test_add_move_and_remove_in_one_chain_converge() -> None:
+    live = core_live()
+    rules = live["routing/filter/rule"]
+    pub = [r for r in rules if r["chain"] == "pub-in"]
+    rest = [r for r in rules if r["chain"] != "pub-in"]
+    # Drop the IPv4 accept, put reject first, and leave a stale owned rule in the chain.
+    stale = {".id": "*9B", "chain": "pub-in", "rule": "accept", "comment": "sharpwire:pub-in:accept-old"}
+    live["routing/filter/rule"] = [*rest, pub[2], stale, pub[1]]
     link(live)
 
     draft = plan_core(NETWORK, CORE_A, live)
 
-    assert [op.describe() for op in draft.ops] == [
-        "- /routing/filter/rule chain=ul-out comment=sharpwire:ul-out:reject"
-    ]
+    assert {op.action for op in draft.ops} == {"add", "move", "remove"}
+    assert_converges(draft, NETWORK, live)
 
 
 def test_rules_out_of_order_are_moved_back() -> None:
@@ -243,7 +352,8 @@ def test_a_mgmt_mtu_change_is_a_warning() -> None:
     draft = plan_core(NETWORK, CORE_A, live)
 
     assert draft.guard_violations == ()
-    assert [w.code for w in draft.warnings] == ["mgmt_interface"]
+    assert [w.code for w in draft.warnings] == ["mgmt_path"]
+    assert draft.warnings[0].message == "core-a: the mgmt path changes: the mgmt interface vlan10's MTU."
 
 
 def test_moving_the_mgmt_interface_violates_the_hard_guard() -> None:
@@ -252,10 +362,82 @@ def test_moving_the_mgmt_interface_violates_the_hard_guard() -> None:
     assert plan_core(NETWORK, CORE_A, live).guard_violations
 
 
+def test_adopting_a_bootstrap_bond_that_changes_its_mode_is_guarded() -> None:
+    # The first plan on a hand-bootstrapped core: bond-leafs was made active-backup on one port, without the marker.
+    live = core_live()
+    bond = row(live, "interface/bonding", name="bond-leafs")
+    bond.update({"mode": "active-backup", "slaves": "sfp-sfpplus1"})
+    del bond["comment"]
+
+    draft = plan_core(NETWORK, CORE_A, live)
+
+    assert [v.split(",")[0] for v in draft.guard_violations] == [
+        "core-a: the plan changes the bond bond-leafs on the mgmt path"
+    ]
+
+
+def test_disabling_a_mgmt_port_is_guarded_and_its_mtu_is_a_warning() -> None:
+    live = core_live()
+    row(live, "interface/ethernet", name="sfp-sfpplus1")["disabled"] = "true"
+    row(live, "interface/ethernet", name="sfp-sfpplus2")["mtu"] = "1500"
+    row(live, "interface/bonding", name="bond-leafs")["lacp-rate"] = "30secs"
+
+    draft = plan_core(NETWORK, CORE_A, live)
+
+    assert [v.split(",")[0] for v in draft.guard_violations] == [
+        "core-a: the plan changes the port sfp-sfpplus1 on the mgmt path"
+    ]
+    assert [w.message for w in draft.warnings] == [
+        "core-a: the mgmt path changes: the port sfp-sfpplus2, the bond bond-leafs."
+    ]
+
+
+def test_a_leaf_without_vlan_filtering_or_with_its_mgmt_vlan_row_replaced_is_guarded() -> None:
+    live = leaf_live()
+    row(live, "interface/bridge", name="bridge")["vlan-filtering"] = "false"
+    row(live, "interface/bridge/vlan", vlan_ids="10")["vlan-ids"] = "10,999"
+
+    draft = plan_leaf(NETWORK, LEAF_A, live)
+
+    assert [v.split(",")[0] for v in draft.guard_violations] == [
+        "leaf-a: the plan changes the bridge bridge on the mgmt path",
+        "leaf-a: the plan changes the bridge VLAN carrying mgmt VLAN 10",
+        "leaf-a: the plan changes the bridge VLAN carrying mgmt VLAN 10",
+    ]
+
+
+def test_removing_a_bridge_port_that_carries_mgmt_is_guarded() -> None:
+    live = leaf_live()
+    live["interface/bridge/port"].append(
+        {".id": "*A1", "bridge": "bridge", "interface": "bond-old", "comment": "sharpwire"}
+    )
+    tagged = row(live, "interface/bridge/vlan", vlan_ids="10")
+    tagged["tagged"] += ",bond-old"
+
+    draft = plan_leaf(NETWORK, LEAF_A, live)
+
+    assert any("the bridge port bond-old on the mgmt path" in v for v in draft.guard_violations)
+
+
 def test_a_bgp_instance_change_is_a_warning() -> None:
     network = with_core_a(asn=4200000002)
     draft = plan_core(network, network.core_by_name["core-a"], core_live())
     assert [w.code for w in draft.warnings] == ["core_bgp_instance"]
+
+
+def test_a_peer_link_bridge_port_or_a_disabled_peer_link_vlan_is_a_warning_and_the_port_a_guard() -> None:
+    live = leaf_live()
+    row(live, "interface/bridge/port", interface="peer-link")["frame-types"] = "admit-only-vlan-tagged"
+    row(live, "interface/bridge/vlan", vlan_ids="300")["disabled"] = "true"
+
+    draft = plan_leaf(NETWORK, LEAF_A, live)
+
+    # The peer-link carries mgmt too, so its frame types are guarded as well as an MLAG warning.
+    assert [v.split(",")[0] for v in draft.guard_violations] == [
+        "leaf-a: the plan changes the bridge port peer-link on the mgmt path"
+    ]
+    assert [w.code for w in draft.warnings] == ["leaf_mlag", "leaf_peer_link_vlans"]
+    assert draft.warnings[1].message == "leaf-a: the peer-link's VLANs change (300)."
 
 
 def test_leaf_mlag_and_peer_link_vlan_changes_are_warnings() -> None:

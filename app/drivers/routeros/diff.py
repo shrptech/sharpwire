@@ -12,6 +12,17 @@ What it does with each row (docs/04-drivers.md#routeros-cores-and-leafs):
 - baseline rows (physical ports) and settings menus are only ever set. A missing one is a problem;
 - dynamic rows are invisible.
 
+Some live states have no safe plan, and stop the plan as a problem for an operator to fix by hand (LiveStateError):
+- two rows with one natural key that sharpwire renders or owns: an op names a row only by its key, so it couldn't
+  say which (RouterOS accepts duplicate filter rule comments);
+- a rule sharpwire doesn't own inside a chain it renders: reordering sharpwire's rules would move it;
+- a rendered row that needs something another live row holds: a port in another bond, an interface in another
+  bridge, a VLAN ID on a parent under another name. RouterOS refuses the add until the other row lets go;
+- a filter table whose order can't be read from `.nextid`.
+
+Rollback limit: the inverse of a remove re-adds the row with its managed fields only. Fields sharpwire doesn't
+manage (a hand-set hold-time, say) are never read, so they don't come back.
+
 Op order is make-before-break: adds and sets in dependency order (referenced objects first), the ordered menu's
 moves with its adds, then removes in reverse dependency order (dependents first).
 """
@@ -78,21 +89,30 @@ def live_rows(live: LiveState, path: str) -> list[LiveRow]:
     return table_order([r for r in rows if r.get("dynamic") not in ("true", "yes")])
 
 
-def table_order(rows: Sequence[LiveRow]) -> list[LiveRow]:
-    """Rows in the device's order, following `.nextid` when every row has one, else as listed."""
+def linked_order(rows: Sequence[LiveRow]) -> list[LiveRow] | None:
+    """Rows in the device's order from `.nextid`, or None if that doesn't give one.
+
+    Each row's `.nextid` names the row after it. RouterOS leaves it out on the last row (checked on 7.25.1), and a
+    value naming no row also ends the table.
+    """
     by_id = {r[".id"]: r for r in rows if ".id" in r}
-    if len(by_id) != len(rows) or not all(".nextid" in r for r in rows):
-        return list(rows)
-    pointed = {r[".nextid"] for r in rows}
+    if len(by_id) != len(rows):
+        return None
+    pointed = {r[".nextid"] for r in rows if r.get(".nextid") in by_id}
     heads = [i for i in by_id if i not in pointed]
     if len(heads) != 1:
-        return list(rows)
+        return None
     ordered: list[LiveRow] = []
     current: str | None = heads[0]
-    while current in by_id and len(ordered) <= len(rows):
+    while current in by_id and len(ordered) < len(rows):
         ordered.append(by_id[current])
         current = by_id[current].get(".nextid")
-    return ordered if len(ordered) == len(rows) else list(rows)
+    return ordered if len(ordered) == len(rows) else None
+
+
+def table_order(rows: Sequence[LiveRow]) -> list[LiveRow]:
+    """Rows in the device's order, from `.nextid` where it gives one, else as listed."""
+    return linked_order(rows) or list(rows)
 
 
 def _spec(path: str) -> Mapping[str, Field]:
@@ -113,6 +133,50 @@ def _identity(path: str, values: Mapping[str, str]) -> tuple[str | None, ...]:
 
 def _key(path: str, values: Mapping[str, str]) -> dict[str, str]:
     return {k: values.get(k, "") for k in MENUS[path].key}
+
+
+def _owned(path: str, row: Mapping[str, str]) -> bool:
+    return owned(row.get("comment"), row.get("chain", "") if MENUS[path].ordered else None)
+
+
+def _where(key: Mapping[str, str]) -> str:
+    return " ".join(f"{k}={v}" for k, v in key.items())
+
+
+def _members(path: str, values: Mapping[str, str]) -> set[str]:
+    return set((_compared(path, values, "slaves") or "").split(",")) - {""}
+
+
+def _conflicts(path: str, wants: list[Resource], rows: list[LiveRow]) -> list[str]:
+    """Rendered rows that need what a different live row holds, which RouterOS won't give two rows at once."""
+    problems: list[str] = []
+    for want in wants:
+        desired = dict(want.fields)
+        identity = _identity(path, desired)
+        for row in rows:
+            if _identity(path, row) == identity:
+                continue
+            if path == "interface/bonding" and (shared := _members(path, desired) & _members(path, row)):
+                ports = ", ".join(sorted(shared))
+                problems.append(
+                    f"{ports} {'is' if len(shared) == 1 else 'are'} in bond {row.get('name')} on the device, but "
+                    f"NetBox puts {'it' if len(shared) == 1 else 'them'} in {desired['name']}. Move by hand first."
+                )
+            elif path == "interface/bridge/port" and _compared(path, row, "interface") == _compared(
+                path, desired, "interface"
+            ):
+                problems.append(
+                    f"{desired['interface']} is a port of bridge {row.get('bridge')} on the device, but NetBox puts "
+                    f"it in {desired['bridge']}. Move it by hand first."
+                )
+            elif path == "interface/vlan" and all(
+                _compared(path, row, f) == _compared(path, desired, f) for f in ("interface", "vlan-id")
+            ):
+                problems.append(
+                    f"VLAN {desired['vlan-id']} on {desired['interface']} is {row.get('name')} on the device, but "
+                    f"{desired['name']} in NetBox. Rename it by hand first."
+                )
+    return problems
 
 
 def _managed(path: str, values: Mapping[str, str]) -> dict[str, str | None]:
@@ -219,14 +283,36 @@ def _diff_menu(
                 forward.append(Op(action="set", path=path, key={}, fields=new, before=old))
         return forward, removes, unmanaged
 
+    rendered = {_identity(path, dict(w.fields)) for w in wants}
     by_identity: dict[tuple[str | None, ...], LiveRow] = {}
-    extras: list[LiveRow] = []
+    duplicates: dict[tuple[str | None, ...], list[LiveRow]] = {}
     for row in rows:
         identity = _identity(path, row)
         if identity in by_identity:
-            extras.append(row)
+            duplicates.setdefault(identity, [by_identity[identity]]).append(row)
         else:
             by_identity[identity] = row
+    for identity, same in duplicates.items():
+        if identity in rendered or any(_owned(path, r) for r in same):
+            problems.append(
+                f"The device has {len(same)} /{path} rows with {_where(_key(path, same[0]))}. "
+                "Remove the extras by hand: a plan can't tell them apart."
+            )
+        elif menu.kind != "baseline":
+            unmanaged += [Unmanaged(path=path, key=_key(path, r)) for r in same[1:]]
+
+    if menu.ordered:
+        chains = {dict(w.fields)["chain"] for w in wants}
+        for row in rows:
+            if row.get("chain") in chains and not _owned(path, row):
+                problems.append(
+                    f"The device has a rule sharpwire didn't make in its chain {row.get('chain')} "
+                    f"({row.get('rule', '')!r}). Move it to another chain or remove it."
+                )
+        if len(rows) > 1 and linked_order(rows) is None:
+            problems.append(f"The order of /{path} couldn't be read from .nextid, so it can't be planned.")
+    if menu.kind == "item":
+        problems += _conflicts(path, wants, rows)
 
     matched: dict[int, LiveRow] = {}
     for i, want in enumerate(wants):
@@ -247,8 +333,8 @@ def _diff_menu(
         forward += _placements(path, wants, matched, rows)
 
     if menu.kind != "baseline":
-        for row in [*by_identity.values(), *extras]:
-            if owned(row.get("comment")):
+        for row in by_identity.values():
+            if _owned(path, row):
                 removes.append(Op(action="remove", path=path, key=_key(path, row), before=_managed(path, row)))
             else:
                 unmanaged.append(Unmanaged(path=path, key=_key(path, row)))
@@ -292,10 +378,11 @@ def simulate(live: LiveState, ops: Iterable[Op], menus: Iterable[str]) -> dict[s
 
     def find(path: str, key: Mapping[str, str]) -> int:
         identity = _identity(path, key)
-        for i, row in enumerate(state[path]):
-            if _identity(path, row) == identity:
-                return i
-        raise KeyError(f"/{path} {dict(key)}")
+        found = [i for i, row in enumerate(state[path]) if _identity(path, row) == identity]
+        if len(found) != 1:
+            # The diff refuses duplicates, so an op always names exactly one row; anything else is a bug here.
+            raise KeyError(f"/{path} {dict(key)} matches {len(found)} rows")
+        return found[0]
 
     def place(path: str, row: dict[str, str], before: Mapping[str, str] | None) -> None:
         rows = state[path]
@@ -339,7 +426,10 @@ def as_resources(live: LiveState, ops: Sequence[Op], menus: Iterable[str]) -> li
             if menu.kind == "settings":
                 out.append(Resource(path=path, fields=tuple(values.items()), key_fields=(), kind="settings"))
                 continue
-            if menu.kind != "baseline" and not owned(row.get("comment")):
+            for name in menu.key:
+                # A routing menu leaves out a field never written, keys included: absent and "" compare the same.
+                values.setdefault(name, row.get(name, ""))
+            if menu.kind != "baseline" and not _owned(path, row):
                 if (path, _identity(path, row)) not in touched:
                     continue
             elif menu.kind == "baseline" and (path, _identity(path, row)) not in touched:

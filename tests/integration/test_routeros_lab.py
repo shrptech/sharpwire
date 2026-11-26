@@ -31,6 +31,12 @@ async def test_the_lab_core_reads_back_in_sync() -> None:
     ) as client:
         live = _swap(dict(await client.read(CORE_MENUS)), {v: k for k, v in PORTS.items()})
 
+    # .proplist with dotted names and .nextid works on the device: every rule but the last names its successor, and
+    # nothing outside the managed fields came back.
+    rules = live["routing/filter/rule"]
+    assert all(".nextid" in r for r in rules[:-1])
+    assert all("routing-table" not in r for r in live["routing/bgp/connection"])
+
     network = example_network()
     draft = plan_core(network, network.core_by_name["core-a"], live)
     # Only what a CHR can't do: l2mtu on virtio ports.

@@ -21,6 +21,8 @@ RouterOS has no candidate config and no commit-confirm.
 
 Whether a rollback fired is read from the marker, never from `run-count`, which resets at boot. All of this was verified on RouterOS 7.25.1 (`spikes/routeros/FINDINGS.md`).
 
+**Known limit:** the inverse of a remove re-adds the row with only the fields sharpwire manages. A removed row's other fields (a hand-set hold-time, say) were never read, so a rollback doesn't bring them back. Reading the full row before a remove comes with apply.
+
 ## Proxmox nodes
 
 Through the `sharpwire-node` helper:

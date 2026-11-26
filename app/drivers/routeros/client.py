@@ -58,18 +58,34 @@ def version_supported(version: str) -> bool:
     return number == SUPPORTED_VERSION or number.startswith(f"{SUPPORTED_VERSION}.")
 
 
+def _is_row(value: Any) -> bool:
+    return isinstance(value, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
+
+
 class RouterOSClient:
+    """Read-only. `verify` must be an SSL context trusting the bootstrap CA: there's no way to turn checks off. Proxy
+    environment variables are ignored, so mgmt traffic always goes straight to the device.
+    """
+
     def __init__(
         self,
         url: str,
         username: str,
         password: str,
-        verify: ssl.SSLContext | bool,
+        verify: ssl.SSLContext,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        if not isinstance(verify, ssl.SSLContext):
+            raise TypeError("verify must be an ssl.SSLContext (see tls_context)")
         self.url = url
         self._http = httpx.AsyncClient(
-            base_url=url, auth=(username, password), verify=verify, timeout=TIMEOUT_SECONDS, transport=transport
+            base_url=url,
+            auth=(username, password),
+            verify=verify,
+            timeout=TIMEOUT_SECONDS,
+            transport=transport,
+            trust_env=False,
+            follow_redirects=False,
         )
 
     async def __aenter__(self) -> Self:
@@ -82,21 +98,26 @@ class RouterOSClient:
         try:
             response = await self._http.get(f"/{path}", params=params)
         except httpx.HTTPError as exc:
-            logger.warning("RouterOS GET %s%s failed", self.url, path, exc_info=True)
+            logger.warning("RouterOS GET %s/%s failed", self.url, path, exc_info=True)
             raise RouterOSError(f"{self.url} didn't answer ({type(exc).__name__}). Check it's reachable.") from exc
         if response.status_code == 401:
             raise RouterOSError(f"{self.url} refused sharpwire's login. Check the service account.")
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
         if response.status_code >= 400:
-            try:
-                detail = response.json().get("detail", response.text)
-            except ValueError:
-                detail = response.text
-            raise RouterOSError(f"{self.url} failed to read /{path}: {detail}")
-        return response.json()
+            detail = body.get("detail") if isinstance(body, dict) else None
+            raise RouterOSError(f"{self.url} failed to read /{path}: {detail or f'HTTP {response.status_code}'}")
+        if response.status_code != 200 or body is None:
+            raise RouterOSError(f"{self.url} answered /{path} with something other than RouterOS JSON.")
+        return body
 
     async def version(self) -> str:
         resource = await self._get("system/resource")
-        return str(resource.get("version", ""))
+        if not isinstance(resource, dict) or not isinstance(resource.get("version"), str):
+            raise RouterOSError(f"{self.url} didn't say which RouterOS it runs.")
+        return str(resource["version"])
 
     async def read(self, menus: Iterable[str]) -> LiveState:
         """Every row of each menu, with the managed fields only. Refuses a RouterOS outside the supported line."""
@@ -109,5 +130,9 @@ class RouterOSClient:
         live: dict[str, Any] = {}
         for path in menus:
             proplist = ",".join((*_ALWAYS, *FIELDS[path]))
-            live[path] = await self._get(path, {".proplist": proplist})
+            rows = await self._get(path, {".proplist": proplist})
+            # A settings menu is one object; every other menu a list of rows. All values are strings.
+            if not (_is_row(rows) or (isinstance(rows, list) and all(_is_row(r) for r in rows))):
+                raise RouterOSError(f"{self.url} returned /{path} in a shape RouterOS doesn't use.")
+            live[path] = rows
         return live

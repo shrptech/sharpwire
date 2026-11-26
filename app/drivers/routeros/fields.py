@@ -168,6 +168,9 @@ def normalise(field: Field, value: str | None) -> str | None:
     """A value in a form two equal values share. Anything unparseable compares as written, so it shows as drift."""
     if value is None:
         return None
+    # Interface menus show an empty field as "": for a field with no default, that's unset.
+    if value == "" and field.default is None:
+        return None
     try:
         match field.kind:
             case "bool":

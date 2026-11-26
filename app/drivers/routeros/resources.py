@@ -62,9 +62,13 @@ MARKER = "sharpwire"
 RULE_COMMENT_PREFIX = f"{MARKER}:"
 
 
-def owned(comment: str | None) -> bool:
-    """Whether a live row's comment marks it as sharpwire's."""
-    return comment is not None and (comment == MARKER or comment.startswith(RULE_COMMENT_PREFIX))
+def owned(comment: str | None, chain: str | None = None) -> bool:
+    """Whether a live row's comment marks it as sharpwire's: exactly `sharpwire`, or for a filter rule (`chain` given)
+    `sharpwire:<that chain>:<name>`. A hand-written comment that merely starts with "sharpwire" doesn't count.
+    """
+    if chain is None:
+        return comment == MARKER
+    return comment is not None and comment.startswith(f"{RULE_COMMENT_PREFIX}{chain}:")
 
 
 def item(path: str, *fields: tuple[str, str], key: tuple[str, ...] = ("name",)) -> Resource:
